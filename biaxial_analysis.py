@@ -1,0 +1,922 @@
+import numpy as np
+import pandas as pd
+import datetime as dt
+import multiprocessing
+import shapely
+import math
+import pygmsh
+import copy
+from shapely import LineString, Polygon, Point
+from shapely.affinity import rotate
+from typing import Literal
+
+from sni_2847 import SNI_2847_2019
+import geometry
+from postprocessing import Plot
+from material import Material
+from capacity import Capacity
+
+import faulthandler
+faulthandler.enable()
+
+class ConcreteInteractionDiagram:
+    """
+    Calculate concrete interaction diagram (biaxial analysis)
+    """
+    def __init__(
+            self, concrete_boundary: pd.DataFrame,
+            rebar: pd.DataFrame,
+            fc_ = 30, # MPa
+            fy = 400, # MPa
+            fc__ = None,
+            fsu = None, # MPa
+            epsilon_0 = 0.002,
+            epsilon_u = 0.0038,
+            gamma = 0.15,
+            Es = 200000, # MPa 
+            eps_sh = 0.015, # 0.005 - 0.025, depend on material
+            eps_su = 0.05,
+            transverse: Literal["ties", "spiral"] = "ties",
+            loads: dict = {
+                "Pu": [0],
+                "Mux": [0],
+                "Muy": [0],
+            },
+        ):
+        # Define concrete boundary and rebar coordinates
+        self._concrete_boundary = concrete_boundary
+        self._rebar = rebar
+
+        # Define material properties
+        self.material = Material(fc_, fy, fc__, fsu, epsilon_0, epsilon_u, gamma, Es, eps_sh, eps_su)
+        self.sni = SNI_2847_2019(transverse)
+
+        # Define ultimate loads
+        self.loads = loads
+
+    def preanalysis(self):
+        """
+        Preanalysis to find the geometric centroid of the concrete boundary and transform the coordinates relative to the centroid
+        """
+
+        # Calculate geometric centroid
+        # When defining the coordinate of concrete boundary above, we randomly choose origin O to be (0, 0),
+        # so that we can define the concrete boundary relative to the origin.
+        # But, for stability & convergence reasons, we need to redefine the "correct" origin of the concrete boundary.
+        # We will be using the geometric centroid of the concrete boundary as the new origin.
+        # Other method is by using plastic centroid (not used here).
+        XO, YO = self.calculate_centroids(self.concrete_boundary[['x', 'y']].values)
+
+        # Transform concrete and rebar coordinates relative to
+        # the new origin
+        self.transform_to_new_origin(XO, YO)
+
+        # Close loop
+        self.close_boundary_loop()
+
+        self.transform_to_O()
+
+    @property
+    def concrete_boundary(self):
+        return self._concrete_boundary
+
+    @property
+    def rebar(self):
+        return self._rebar
+
+    def calculate_centroids(self, points: np.ndarray):
+        """
+        Calculate gross section's geometric centroid.
+            We use pygmsh to mesh the concrete boundary
+            in aims to calculate the centroid. No need fine meshing.
+        """
+        if self.first_and_last_node_same(points):
+            points = points[:-1, :]
+
+        with pygmsh.geo.Geometry() as geom:
+            poly = geom.add_polygon(
+                points,
+                mesh_size=5000,
+            )
+            geom.add_physical(poly, label="surface")
+            mesh = geom.generate_mesh()
+
+        vertices = mesh.points
+        triangles = None
+        for cell in mesh.cells:
+            if cell.type == "triangle":
+                triangles = cell.data
+                break
+
+        # centroid will be the centroid of each meshed triangle
+        centroid = np.zeros((len(triangles), 2))
+        # areas will be the area of each meshed triangle
+        areas = np.zeros(len(triangles))
+
+        # For each triangle, calculate the centroid and area
+        for i in range(len(triangles)):
+            # Calculate area
+            x1 = vertices[triangles[i][0]][0]
+            x2 = vertices[triangles[i][1]][0]
+            x3 = vertices[triangles[i][2]][0]
+            y1 = vertices[triangles[i][0]][1]
+            y2 = vertices[triangles[i][1]][1]
+            y3 = vertices[triangles[i][2]][1]
+            area = 0.5 * np.abs(x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+
+            x_sum = x1 + x2 + x3
+            y_sum = y1 + y2 + y3
+
+            # Calculate centroid
+            x_cen = x_sum / 3
+            y_cen = y_sum / 3
+
+            # Assign values
+            centroid[i] = [x_cen, y_cen]
+            areas[i] = area
+
+        # Calculate total area
+        total_area = np.sum(areas)
+
+        # Calculate global centroid
+        X_cen = np.sum(centroid[:,0] * areas) / total_area
+        Y_cen = np.sum(centroid[:,1] * areas) / total_area
+
+        return X_cen, Y_cen
+
+
+    def calculate_depth(self, na_line: LineString):
+        """
+        Calculate depth (height) of compression zone
+        from the neutral axis to the most compressed point
+        (i.e. the top (extreme) of the concrete boundary).
+        point_on_na: x and y coordinate of a point on neutral axis
+        alpha: angle of the neutral axis that passes through point_on_na (clockwise)
+
+        point_on_na is X
+        alpha is a
+
+             NA
+              \
+               \
+              a \
+            -----X----
+                  \
+                   \
+        """
+        # Localising
+        concrete_boundary = self.concrete_boundary
+        XO = self.XO
+        YO = self.YO
+
+        # Find midline along neutral axis and set it as local origin
+        mid_na = na_line.interpolate(0.5)
+
+        # Extract x,y coordinates
+        x_na, y_na = mid_na.x, mid_na.y
+
+        # Map concrete boundary from global to local coordinate
+        # (relative to neutral axis).
+        # Local origin O' is set to the midline of the neutral axis
+        concrete_boundary_local = geometry.map_to_local(concrete_boundary[['x', 'y']].values, XO, YO, x_na, y_na, na_line)
+
+        # Get Xe, Ye: the farthest point on the compression side.
+        # tens_node: farthest node on tension side (not always true, but it is the least value)
+        # comp_node: farthest node on compression side
+        tens_node, comp_node = geometry.find_farthest_node(concrete_boundary_local)
+        # xec, yec: x and y coordinate of the farthest compression point (local coordinate)
+        # yec: must be positive, since compression height is positive above the neutral axis.
+        # yec must be checked by the caller: if negative, it indicates that neutral axis is beyond the concrete boundary
+        xec, yec = comp_node[0], comp_node[1]
+        # xet, yet: x and y coordinate of the farthest tension point (local coordinate)
+        xet, yet = tens_node[0], tens_node[1]
+
+        # Make a point on the farthest compression point and tension (local)
+        xeye_c = np.array([[xec, yec]])
+        xeye_t = np.array([[xet, yet]])
+
+        # Map the points from local to global
+        XeYe_c = geometry.map_to_global(xeye_c, XO, YO, x_na, y_na, na_line)
+        XeYe_t = geometry.map_to_global(xeye_t, XO, YO, x_na, y_na, na_line)
+
+        # Xe, Ye is the farthest compression point in global coordinate
+        Xec, Yec = XeYe_c[0][0], XeYe_c[0][1]
+        Xet, Yet = XeYe_t[0][0], XeYe_t[0][1]
+
+        # Make a point on the farthest compression point and tension (global)
+        XeYe_c_point = Point(Xec, Yec)
+        Xeye_t_point = Point(Xet, Yet)
+
+        # TODO: c returned here is not always the max depth
+        # We calculate c from origin O. But, actually, it can also
+        # below the origin. How to handle this?
+        # c: the depth (distance) from the neutral axis perpendicular to the farthest compression point
+        # t: the depth (distance) from the neutral axis perpendicular to the farthest tension point
+        # c and t are both positive
+        c = shapely.distance(XeYe_c_point, na_line)
+        t = shapely.distance(Xeye_t_point, na_line)
+
+        return c, Xec, Yec, xec, yec, t, Xet, Yet, xet, yet
+
+    def calculate_strain(self, rebar_y: np.ndarray, y_comp: float):
+        """
+        Calculate strain for each rebar.
+            rebar_y: y coordinate of rebar (local coordinate system)
+            y_comp: maximum depth of concrete compression
+            epsilon_u: ultimate strain of concrete (usually 0.0038)
+        """
+        if y_comp == 0:
+            raise ValueError("concrete compression depth cannot be zero")
+
+        return rebar_y / y_comp * self.material.epsilon_u
+
+    def close_boundary_loop(self):
+        """
+        Check if the boundary is closed.
+        If not, close it
+        """
+        if self.first_and_last_node_same(self.concrete_boundary[['x', 'y']].values):
+            first_point = self.concrete_boundary.loc[[0]]
+            self._concrete_boundary = pd.concat([self.concrete_boundary, first_point], axis=0, ignore_index=True)
+
+    def construct_neutral_axis(self, point_on_na: tuple[float], alpha: float) -> LineString:
+        # Localising
+        concrete_boundary = self.concrete_boundary
+        # Extract x,y
+        x_na, y_na = point_on_na
+        xmin = concrete_boundary['x'].min()
+        xmax = concrete_boundary['x'].max()
+
+        # Create a horizontal line that passes through point_on_na
+        # We extend the line to cover the whole concrete boundary on the x-axis
+        # (using xmin and xmax)
+        line = LineString([(xmin, y_na), (xmax, y_na)])
+        # Rotate the line about the point_on_na by alpha
+        # We negate alpha, since rotate operation rotates counter clockwise,
+        # but we want to rotate clockwise (our calculation is based on clockwise rotation)
+        rotated_line = rotate(line, alpha, origin=(x_na, y_na))
+        x, y = rotated_line.xy
+        # delta_x and delta_y are used to extend the line.
+        # The intent is to get the line that covers the whole concrete boundary on both axis
+        delta_x = 10*(x[1] - x[0])
+        delta_y = 10*(y[1] - y[0])
+        # Create a Neutral axis that rotates to alpha that passes through the point_on_na
+        na_line = LineString([(x[0] - delta_x, y[0] - delta_y), (x[1] + delta_x, y[1] + delta_y)])
+        return na_line
+
+    def find_lowest_left_node(self):
+        """
+        Find the lowest left node
+        """
+        min_x = min(self.concrete_boundary['x'])
+        min_y = min(self.concrete_boundary['y'])
+        
+        return min_x, min_y
+
+    def _find_Mnx_Mny_at_Pn(self, Pn_target, alpha, h_min, h_max, method="secant", tol=1e-1, max_iter=100):
+        """Find Mnx and Mny such that Pn is close to Pn_target
+        """
+        if method == "secant":
+            return self._secant_method(Pn_target, alpha, h_min, h_max, tol, max_iter)
+        if method == "bisection":
+            return self._bisection_method(Pn_target, alpha, h_min, h_max, tol, max_iter)
+        raise ValueError(f"Unknown method: {method}")
+
+    def find_Mx_My_at_P(self, P: float, alpha: float):
+        """
+        TODO: Need to rename this function. It will be used to
+        calculate the phi Mn and phi Pn as well.
+        Find combination of Mx and My that gives Pn close to P and alpha
+        """
+        # Construct neutral axis that passes through point (0, 0)
+        na = self.construct_neutral_axis(point_on_na=(0, 0), alpha=alpha)
+
+        # Get maximum depth from neutral axis to the farthest point of compression and tension
+        c_max, _, _, _, _, t_max, _, _, _, _ = self.calculate_depth(na)
+
+        # h_min and h_max are limit where we will iterate to find Mnx and Mny.
+        # Avoid h at the farthest point of compression and tension
+        # to avoid numerical error (no compression or tension area is formed)
+        h_min = -t_max + 5
+        h_max = c_max - 5
+
+        Pn, Mnx, Mny, eps_t = self._find_Mnx_Mny_at_Pn(P, alpha, h_min, h_max)
+
+        # Calculate theta, the angle between Mnx and Mny
+        theta = math.atan2(Mny, Mnx) * 180 / math.pi
+
+        # Normalize theta
+        theta = self.normalize_theta(theta)
+
+        # eps_t = [0] * len(alphas)
+        eps_y = self.material.fy / self.material.Es
+        sni = self.sni
+        phi = sni.compute_phi(reduction_type="moment_axial", eps_t=eps_t, eps_y=eps_y)
+
+        return Pn, Mnx, Mny, theta, phi
+
+    def find_Pn_Mn(self, alpha: float = 0, h: float = 10):
+        """
+        Calculate Pn, Mnx, Mny from alpha and h
+            alpha is in degrees
+            h is height from origin O to neutral axis
+            c is depth of compression from neutral axis to the most compressed point
+            h + c = c_max
+        """
+        XO = self.XO
+        YO = self.YO
+
+        # Isolate concrete boundary and rebar locally to this function only
+        # - Readability
+        concrete_boundary = copy.copy(self.concrete_boundary)
+        rebar = copy.copy(self.rebar)
+
+        # Make a polygon from the concrete boundary
+        concrete_polygon = Polygon(concrete_boundary[['x', 'y']].values)
+
+        # Translate h into horizontal and vertical distance.
+        # h is (usually diagonal) perpendicular distance from origin to neutral axis.
+        # Translation made so that we know where our neutral axis is going to move in
+        # horizontal and vertical direction from origin.
+        bh = h * np.sin(alpha*np.pi/180)
+        bv = h * np.cos(alpha*np.pi/180)
+
+        # Construct neutral axis from a point on neutral axis and its angle
+        na_line = self.construct_neutral_axis(point_on_na=(XO+bh, YO+bv), alpha=alpha)
+
+        whitney_factor = 0.85
+        comp_line = self.construct_neutral_axis(point_on_na=(XO+bh*whitney_factor, YO+bv*whitney_factor), alpha=alpha)
+
+        # Calculate:
+        # c: compression depth
+        # Xe: x coordinate of the most compressed point (global axis)
+        # Ye: y coordinate of the most compressed point (global axis)
+        # xe: x coordinate of the most compressed point (local axis)
+        # ye: y coordinate of the most compressed point (local axis)
+        c, Xe, Ye, xe, ye, _, _, _, _, _  = self.calculate_depth(na_line=na_line)
+
+        # ye must be positive, since it is the y coordinate of the most compressed point above neutral axis.
+        # If negative, it means neutral axis is beyond the most compressed point (beyond concrete boundary).
+        if ye < 0:
+            raise ValueError("c < 0. This is not allowed.")
+
+        # TODO: I think we can remove Xa, Ya, Xe, Ye at this point, since we don't
+        # need local origin anymore in the next step
+        # We can just make midline along neutral axis and set it as local origin
+
+        # Calculate coordinate O' (Xa, Ya) in global axis
+        Xa = Xe + c * np.sin(alpha * np.pi / 180)
+        Ya = Ye - c * np.cos(alpha * np.pi / 180)
+
+        # Remap concrete boundary and rebar coordinates in the rotated coordinate system (Neutral Axis) using new O'.
+        rebar_local = geometry.map_to_local(rebar[['x', 'y']].values, XO, YO, Xa, Ya, na_line)
+
+        rebar_local_pd = pd.DataFrame(rebar_local, columns=['x', 'y'])
+
+        # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye
+        rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, ye)
+        # Concat strain (relative to Neutral Axis line)
+        rebar['strain'] = rebar_strain_local
+
+        # Calculate area of each rebar
+        rebar_area_Ab = geometry.calculate_rebar_area(rebar[['diameter']])
+        # Concat rebar area
+        rebar['Ab'] = rebar_area_Ab
+
+        # Get compression part from the concrete if all the section is crossed by
+        # the neutral axis
+        # Xe, Ye: indicator of the most compressed point, so it knows which part
+        # is in compression
+        compression_part = geometry.get_compression_part(concrete_polygon, comp_line, (Xe, Ye))
+
+        # TODO: concrete boundary seharusnya sudah dikurangi sehingga 0.85 C saja yang diconsider untuk
+        # Whitney stress block
+
+        # Calculate Pn, Mnx, Mny using Whitney stress block
+        Pcn = 0
+        Mcnx = 0
+        Mcny = 0
+        # Calculate Pn, Mnx, Mny for each compression part 
+        for i in range(0, len(compression_part)):
+            Pcn_part, Mcnx_part, Mcny_part = self.Pcn_Mcnx_Mcny(compression_part[i], XO, YO)
+            Pcn += Pcn_part
+            Mcnx += Mcnx_part
+            Mcny += Mcny_part
+
+        ##########
+        # STRESS #
+        ##########
+
+        # Calculate rebar stress based on strain and area
+        rebar_fsi = self.material.steel_rebar_stress_strain_ufunc(rebar[['strain']])
+        rebar['fsi'] = rebar_fsi
+
+        # Calculate concrete stress at reinforcement rebar (to correct hole made by rebar)
+        rebar_fci = self.material.concrete_stress_strain_ufunc(rebar[['strain']])
+        rebar['fci'] = rebar_fci
+
+        #########
+        # FORCE #
+        #########
+
+        # Rebar force: Fsi = Ab * fsi
+        # Abi * fsi (mm2 * MPa / 1000 -> KN)
+        rebar_Ab_fsi = rebar[['fsi']].values * rebar[['Ab']].values / 1000
+        rebar['Ab_fsi'] = rebar_Ab_fsi
+
+        # Concrete force at rebar position (to correct hole made by rebar)
+        # Fci = Ab * fci
+        # Abi * fci (mm2 * MPa / 1000 -> KN)
+        rebar_Ab_fci = rebar[['fci']].values * rebar[['Ab']].values / 1000
+        rebar['Ab_fci'] = rebar_Ab_fci
+
+        #############
+        # SUMMATION #
+        #############
+
+        # Total nominal concrete capacity
+        # Ab * fci -> KN
+        sum_Ab_fci = np.sum(rebar[['Ab_fci']])
+
+        # Total nominal concrete moment capacity about global X-axis
+        # Ab * fci * Ybi -> KN * mm / 1e6 = KN.m
+        sum_Ab_fci_Ybi = np.sum(rebar[['Ab_fci']].values * rebar[['y']].values / 1e3)
+
+        # Total nominal concrete moment capacity about global Y-axis
+        # Ab * fci * Xbi -> KN * mm / 1e6 = KN.m
+        sum_Ab_fci_Xbi = np.sum(rebar[['Ab_fci']].values * rebar[['x']].values / 1e3)
+
+        # Total nominal rebar capacity
+        # Ab * fsi -> KN
+        sum_Ab_fsi = np.sum(rebar[['Ab_fsi']])
+
+        # Total nominal rebar moment capacity about global X-axis 
+        # Ab * fsi * Ybi -> KN * mm / 1e6 = KN.m
+        sum_Ab_fsi_Ybi = np.sum(rebar[['Ab_fsi']].values * rebar[['y']].values / 1e3)
+
+        # Total nominal rebar moment capacity about global Y-axis
+        # Ab * fsi * Xbi -> KN * mm / 1e6 = KN.m
+        sum_Ab_fsi_Xbi = np.sum(rebar[['Ab_fsi']].values * rebar[['x']].values / 1e3)
+
+        # Total nominal capacity
+        # Pn: Nominal axial capacity
+        Pn = Pcn + sum_Ab_fsi - sum_Ab_fci
+        # Mnx: Nominal moment capacity about global X-axis
+        MnX = Mcnx + sum_Ab_fsi_Ybi - sum_Ab_fci_Ybi
+        # Mny: Nominal moment capacity about global Y-axis
+        MnY = Mcny + sum_Ab_fsi_Xbi - sum_Ab_fci_Xbi
+
+        # Get strain of the most tensile rebar
+        eps_t = -min(rebar[['strain']].values)[0]
+
+        # Return nominal capacity based on selected alpha and h
+        return Pn, MnX, MnY, eps_t
+
+    def first_and_last_node_same(self, points: np.ndarray = None):
+        """
+        Check if the first and last node are the same
+        """
+        first_point = points[0]
+        last_point = points[-1]
+        return (first_point == last_point).all()
+
+    def _secant_method(self, Pn_target: float, alpha: float = 0,
+                      h_min: float = -100, h_max: float = 100,
+                      tol: float = 1e-1, max_iter: float = 100):
+        """
+        Find combination of Mnx and Mny, such that Pn is close to Pn_target
+            by utilizing secant method.
+        """
+        Pn0, _, _, _ = self.find_Pn_Mn(alpha, h_min)
+        Pn1, Mnx1, Mny1, eps_t = self.find_Pn_Mn(alpha, h_max)
+        h0 = h_min
+        h1 = h_max
+
+        iter_count = 0
+        while iter_count < max_iter:
+            iter_count += 1
+
+            # Return the result if the iteration has reached the convergence
+            if abs(Pn1 - Pn_target) < tol:
+                return Pn1, Mnx1, Mny1, eps_t
+
+            # Avoid division by zero
+            if abs(Pn1 - Pn0) < 1e-6:
+                raise ValueError("Failed: Pn0 and Pn1 is too close")
+            
+            # Update the new value by using secant formula:
+            # h_new = h1 - f(h1) * (h1 - h0) / (f(h1) - f(h0))
+            h_new = h1 - (Pn1 - Pn_target) * (h1 - h0) / (Pn1 - Pn0)
+
+            error = False
+
+            # Recalculate using the new value
+            try:
+                Pn_new, Mnx1, Mny1, eps_t = self.find_Pn_Mn(alpha, h_new)
+            except ValueError:
+                error = True
+
+            # If h0 and h1 are out of range (getting bigger for each iteration),
+            # it indicates that the method is not converging.
+            # The possibility is initial h0 and h1 are wrong.
+            # Hence, we need to swap h0 and h1 (based on h_min and h_max).
+            # We choose 5_000 as limit, since physically it is very unlikely
+            # to have a concrete dimension greater than 5_000 mm
+            if abs(h0) > 5_000 or abs(h1) > 5_000:
+                error = True
+
+            # If there is an error, we are attempting to swap h0 and h1
+            if error:
+                # Reset and swap values (opposite of initial value before looping)
+                h0 = h_max
+                h1 = h_min
+                Pn0, _, _, _ = self.find_Pn_Mn(alpha, h_max)
+                Pn1, Mnx1, Mny1, eps_t = self.find_Pn_Mn(alpha, h_min)
+            else:
+                # Update the values for next iteration if there is no error
+                h0, Pn0 = h1, Pn1
+                h1, Pn1 = h_new, Pn_new
+
+        return 0, 0, 0, 0
+
+    def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
+        Mn = []
+        Pn = []
+        Pn_string = element[0]
+        Mnx_string = element[1]
+        Mny_string = element[2]
+
+        for k, result in enumerate(results.capacity):
+            for i, r in enumerate(result["theta"]):
+                j = (i + 1) % len(result["theta"])
+
+                bigger = result["theta"][i]
+                smaller = result["theta"][j]
+
+                in_between = smaller <= theta_target < bigger
+                if in_between:
+                    # Create a virtual line between origin O to theta.
+                    # We choose x = 5_000, as hard limit as physically it is
+                    # rare to have concrete section larger than 5_000 mm
+                    if 0 < theta_target < 90 or 180 < theta_target < 270:
+                        x_inf = 5_000
+                    else:
+                        x_inf = -5_000
+                    y_inf = math.tan(theta_target / 180 * math.pi) * x_inf
+
+                    # Special cases if theta is 0, 90, 180, 270.
+                    # At this degree, tan is undefined, hence we need to
+                    # handle this situation and set a large value.
+                    if theta_target == 0:
+                        x_inf = 5_000
+                        y_inf = 0
+                    elif theta_target == 180:
+                        x_inf = -5_000
+                        y_inf = 0
+                    elif theta_target == 90:
+                        x_inf = 0
+                        y_inf = 5_000
+                    elif theta_target == 270:
+                        x_inf = 0
+                        y_inf = -5_000
+                    if theta_target in [0, 90, 180, 270]:
+                        result[Mnx_string][i] = 0 if abs(result[Mnx_string][i]) < 0.000001 else result[Mnx_string][i]
+                        result[Mny_string][i] = 0 if abs(result[Mny_string][i]) < 0.000001 else result[Mny_string][i]
+                        result[Mnx_string][j] = 0 if abs(result[Mnx_string][j]) < 0.000001 else result[Mnx_string][j]
+                        result[Mny_string][j] = 0 if abs(result[Mny_string][j]) < 0.000001 else result[Mny_string][j]
+
+                    # Build a line from failure surface
+                    x = result[Mnx_string][i], result[Mnx_string][j]
+                    y = result[Mny_string][i], result[Mny_string][j]
+                    failure_line = LineString([(x[0], y[0]), (x[1], y[1])])
+
+                    # Build a line that form theta target
+                    theta_line = LineString([(0, 0), (x_inf, y_inf)])
+
+                    # Get the intersection.
+                    # This intersection is the Mx and My at theta target
+                    intersection = failure_line.intersection(theta_line)
+
+                    # extract Mx and My
+                    Mx, My = intersection.x, intersection.y
+
+                    # Calculate vector moment from Mx and My
+                    M = math.sqrt(Mx**2 + My**2)
+                    Mn.append(M)
+                    Pn.append(result[Pn_string][i])
+                    break
+            else:
+                Mn.append(0)
+                Pn.append(result[Pn_string][i])
+        return Mn, Pn
+
+    def interpolate_PM_at_loads(self, loads: dict, results: list, reduced=False):
+        # Mns and Pns is collection of Mn and Pn.
+        # Example value:
+        # Mns = [
+        #   [10, 20, 30, ...], -> Mn at 0°
+        #   [20, 30, 40, ...], -> Mn at 30°
+        #   [30, 40, 50, ...], -> Mn at 60°
+        # ]
+        # theta = [0, 30, 60]
+        Mns = []
+        Pns = []
+        thetas = []
+
+        # Assume all loads are unsafe
+        loads.update({"safe": [False] * len(loads["Pu"])})
+
+        for i, _ in enumerate(loads["Pu"]):
+            Pu = loads["Pu"][i]
+            Mux = loads["Mux"][i]
+            Muy = loads["Muy"][i]
+
+            theta = math.atan2(Muy, Mux) * 180 / math.pi
+
+            # Normalize theta
+            theta = self.normalize_theta(theta)
+            
+            Mu = math.sqrt(Mux**2 + Muy**2)
+
+            # Mn & Pn is a list of points that forms the failure surface at theta
+            Mn, Pn = self.interpolate_PM(theta, results)
+            Mns.append(Mn)
+            Pns.append(Pn)
+            thetas.append(theta)
+
+            # If the capacity is reduced (has been multiplied by phi),
+            # then we check if the capacity is still safe for the load
+            if results.reduced:
+                polygon = Polygon(np.column_stack((Mns[-1], Pns[-1])))
+                point = Point(Mu, Pu)
+                loads["safe"][i] = polygon.contains(point)
+
+        return Mns, Pns, thetas, loads
+
+    def interpolate_PM_at_thetas(self, thetas: list, results: list):
+        # Mns and Pns is collection of Mn and Pn.
+        # Example value:
+        # Mns = [
+        #   [10, 20, 30, ...], -> Mn at 0°
+        #   [20, 30, 40, ...], -> Mn at 30°
+        #   [30, 40, 50, ...], -> Mn at 60°
+        # ]
+        # theta = [0, 30, 60]
+        Mns = []
+        Pns = []
+        for i, theta in enumerate(thetas):
+            # Mn & Pn is a list of points that forms the failure surface at theta
+            Mn, Pn = self.interpolate_PM(theta, results)
+            Mns.append(Mn)
+            Pns.append(Pn)
+        return Mns, Pns
+
+    def normalize_theta(self, theta):
+        # Handle very small angles around 0 degrees
+        if abs(theta) < 0.0000001:
+            theta = 0
+        
+        # Handle negative angles.
+        # atan2 returns angle in [-pi, pi], but we want angle in [0, 360]
+        # For 0°, we convert it to 360°, so that the final theta (on parent function) is descending from 360° to >0°
+        if theta <= 0:
+            theta += 360
+        return theta
+
+    def Pc_max(self):
+        """
+        Nominal compressive strength
+        """
+        fc_ = self.material.fc_
+        fy = self.material.fy
+        concrete_area = geometry.calculate_concrete_area(self.concrete_boundary[['x', 'y']].values)
+        rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].values))
+        return (0.85 * fc_ * (concrete_area-rebar_area) + fy * rebar_area) / 1e3
+
+    def Pcn_Mcnx_Mcny(self, concrete_compression_boundary_xy: np.ndarray, XO: float, YO: float):
+        """
+        Calculate concrete nominal compression axial capacity, Pn, Mnx, Mny based on
+        Whitney stress block.
+        
+            concrete_boundary_xy: coordinates of concrete boundary (global axis)
+            XO, YO: origin to calculate moment length
+        """
+        Pn: float = 0
+        Mnx: float = 0
+        Mny: float = 0
+
+        # Find x and y centroid of points in global axis
+        x_cen_compress, y_centroid_compress = self.calculate_centroids(concrete_compression_boundary_xy)
+
+        # Calculate compression area
+        compression_area = geometry.calculate_concrete_area(concrete_compression_boundary_xy)
+
+        # Calculate moment length (distance from centroid to neutral axis)
+        x_depth = x_cen_compress - XO
+        y_depth = y_centroid_compress - YO
+
+        # Calculate Pn, Mnx, Mny
+        Pn = compression_area * self.material.fc__ / 1e3
+        Mnx = compression_area * self.material.fc__ * y_depth / 1e6
+        Mny = compression_area * self.material.fc__ * x_depth / 1e6
+
+        return Pn, Mnx, Mny
+
+    def Pt_max(self):
+        """
+        Calculate maximum concrete tensile strength.
+        The value will be in negative.
+        """
+        rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].values))
+        Pn_max = self.material.fy * rebar_area / 1e3
+        return -Pn_max
+
+    def solve_axial_from_thetas(self, thetas: list, results: list):
+        # Mns and Pns is collection of Mn and Pn.
+        # Example value:
+        # Mns = [
+        #   [10, 20, 30, ...], -> Mn at 0°
+        #   [20, 30, 40, ...], -> Mn at 30°
+        #   [30, 40, 50, ...], -> Mn at 60°
+        # ]
+        # theta = [0, 30, 60]
+        Mns = []
+        Pns = []
+        for i, theta in enumerate(thetas):
+            # Mn & Pn is a list of points that forms the failure surface at theta
+            Mn, Pn = self.interpolate_PM(theta, results)
+            Mns.append(Mn)
+            Pns.append(Pn)
+        return Mns, Pns
+
+    def solve_biaxial_analysis(self):
+        """
+        Solve biaxial analysis from full tension to full compression
+        """
+        alphas = [alpha for alpha in range(0, 360, 10)]
+        sni = self.sni
+
+        # Supress scientific notation
+        np.set_printoptions(suppress=True)
+        Pn_max = self.Pc_max()
+        Pn_min = self.Pt_max()
+
+        # Add result for full tension.
+        # At this level, Mnx = Mny = 0, Pn = Pn_min
+        zeros = [0] * len(alphas)
+        Pnt = [Pn_min] * len(alphas)
+
+        state = ['tension'] * len(alphas)
+        phis = sni.compute_phi_vector(reduction_type=state)
+
+        # Nominal capacity and reduced capacity
+        nc = Capacity(False, [])
+        rc = Capacity(True, [])
+
+        nc.capacity = [{
+            'Pn': Pnt,
+            'Mnx': zeros,
+            'Mny': zeros,
+            'theta': zeros,
+        }]
+        rc.capacity = [{
+            'Pn': phis * Pnt,
+            'Mnx': zeros,
+            'Mny': zeros,
+            'theta': zeros,
+        }]
+
+        # Add result between full tension and full compression.
+
+        # Set Pn for extension zone (Pn < 0)
+        Pns_target = [P for P in range(int(Pn_min*0.6), 0, abs(int(Pn_min/3)))]
+        # Set Pn for compression zone (Pn >= 0)
+        Pns_target = Pns_target + [P for P in range(0, int(Pn_max*0.85), int(Pn_max/15))]
+
+        for _, Pn_target in enumerate(Pns_target):
+            Pn0 = []
+            Mnx0 = []
+            Mny0 = []
+            theta0 = []
+            phi0 = []
+            # eps_t0 = []
+
+            with multiprocessing.Pool(processes=16) as pool:
+                # Map the function to the inputs and get results in order
+                for Pn, Mnx, Mny, theta, phi in pool.starmap(self.find_Mx_My_at_P, [(Pn_target, alpha) for alpha in alphas]):
+                    Pn0.append(Pn)
+                    Mnx0.append(Mnx)
+                    Mny0.append(Mny)
+                    theta0.append(theta)
+                    phi0.append(phi)
+            nc.capacity.append({
+                "Pn": Pn0,
+                "Mnx": Mnx0,
+                "Mny": Mny0,
+                "theta": theta0,
+            })
+
+            phix = sni.compute_phi(reduction_type="compression", eps_t=0, eps_y=self.material.fy / self.material.Es)
+            phiPn_max = sni.compute_phiPn_max(phix * Pn_max)
+            rc.capacity.append({
+                "Pn": [sni.compute_phiPn(phi, Pn, phiPn_max) for phi, Pn in zip(phi0, Pn0)],
+                "Mnx": [phi * Mnx for phi, Mnx in zip(phi0,  Mnx0)],
+                "Mny": [phi * Mny for phi, Mny in zip(phi0, Mny0)],
+                "theta": theta0,
+            })
+
+        # Add result for full compression
+        # At this level, Mnx = Mny = 0, Pn = Pn_max
+        Pnc = [Pn_max] * len(alphas)
+
+        eps_t = [0] * len(alphas)
+        eps_y = [self.material.fy / self.material.Es] * len(alphas)
+        state = ["compression"] * len(alphas)
+        phis = sni.compute_phi_vector(reduction_type=state, eps_t=eps_t, eps_y=eps_y)
+
+        nc.capacity.append({
+            "Pn": Pnc,
+            "Mnx": zeros,
+            "Mny": zeros,
+            "theta": zeros,
+        })
+        phix = sni.compute_phi(reduction_type="compression", eps_t=0, eps_y=self.material.fy / self.material.Es)
+        phiPn_max = sni.compute_phiPn_max(phix * Pn_max)
+        rc.capacity.append({
+            "Pn": [sni.compute_phiPn(phi, Pn, phiPn_max) for phi, Pn in zip(phi0, Pn0)],
+            "Mnx": zeros,
+            "Mny": zeros,
+            "theta": zeros,
+        })
+
+        return nc, rc
+
+    def transform_to_new_origin(self, XO: float = 0, YO: float = 0):
+        """
+        Transform (translate) any coordinate relative to the origin XO, YO.
+
+        Example:
+            Coordinate (10, 20) if transformed to new origin (5, 5) will be (5, 15)
+        """
+        # Translate concrete boundary relative to the origin
+        self._concrete_boundary['x'] = self._concrete_boundary['x'] - XO
+        self._concrete_boundary['y'] = self._concrete_boundary['y'] - YO
+
+        # Translate concrete rebar relative to the origin
+        self._rebar['x'] = self._rebar['x'] - XO
+        self._rebar['y'] = self._rebar['y'] - YO
+
+        # Reset XO, YO to 0 after coordinate transformation
+        self.XO = 0
+        self.YO = 0
+        self.Origin = shapely.geometry.Point(XO, YO)
+
+    def transform_to_O(self):
+        x, y = self.find_lowest_left_node()
+        self._concrete_boundary['x_norm'] = self._concrete_boundary['x'] - x
+        self._concrete_boundary['y_norm'] = self._concrete_boundary['y'] - y
+
+        # Translate concrete rebar relative to the origin
+        self._rebar['x_norm'] = self._rebar['x'] - x
+        self._rebar['y_norm'] = self._rebar['y'] - y
+
+def run(solution: ConcreteInteractionDiagram):
+    now = dt.datetime.now()
+
+    solution.preanalysis()
+
+    # Solve Biaxial
+    nominalCapacity, reducedCapacity = solution.solve_biaxial_analysis()
+    print(f"Biaxial analysis time:\t\t\t{dt.datetime.now() - now}")
+
+    # Interpolate PM graphs at multiple thetas
+    now = dt.datetime.now()
+    target_thetas = [0, 90, 180, 270]
+    Mns1, Pns1 = solution.interpolate_PM_at_thetas(target_thetas, nominalCapacity)
+    phiMns1, phiPns1 = solution.interpolate_PM_at_thetas(target_thetas, reducedCapacity)
+
+    # Interpolate PM graphs at multiple loads
+    Mns2, Pns2, theta2, loads = solution.interpolate_PM_at_loads(solution.loads, nominalCapacity)
+    phiMns2, phiPns2, phitheta2, philoads = solution.interpolate_PM_at_loads(loads, reducedCapacity)
+
+    # Plot
+    plot = Plot()
+    plot.draw_section(solution)
+    plot.plot3d(reducedCapacity)
+    plot.plot3d(nominalCapacity)
+
+    # Plot PM.
+    # We plot reduced capacity first, then nominal capacity.
+    # Larger values of nominal capacity will zoom out the final plot.
+    plot.plot_PM_from_thetas(phiMns1, phiPns1, target_thetas, reduced=True)
+    plot.plot_PM_from_thetas(Mns1, Pns1, target_thetas, reduced=False)
+
+    # Plot PM
+    plot.plot_PM_from_loads(phiMns2, phiPns2, philoads, phitheta2, reduced=True)
+    plot.plot_PM_from_loads(Mns2, Pns2, loads, theta2, reduced=False)
+
+    # Plot MM
+    plot.plot_MM(nominalCapacity)
+    print(f"Interpolation and plotting time:\t{dt.datetime.now() - now}")
+
+    plot.show()
