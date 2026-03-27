@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Flask + Matplotlib Native Plot</title>
+    <script src="https://unpkg.com/htmx.org@2.0.0"></script>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; background-color: #f4f7f6; }
+        .container { max-width: 1000px; width: 100%; border: 1px solid #ddd; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); background: white; }
+        .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; align-items: start; }
+        @media (max-width: 800px) { .main-grid { grid-template-columns: 1fr; } }
+        
+        fieldset { border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 25px; background: #fff; }
+        legend { font-weight: bold; padding: 0 10px; color: #007bff; font-size: 1.1em; }
+        
+        .input-row { margin-bottom: 15px; }
+        .input-row:last-child { margin-bottom: 0; }
+        .input-row label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; color: #555; }
+        
+        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        
+        input[type="number"], select, textarea { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; transition: border-color 0.2s; }
+        input:focus, select:focus, textarea:focus { border-color: #007bff; outline: none; }
+        
+        .radio-group { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 5px; padding: 5px; background: #f9f9f9; border-radius: 6px; }
+        .radio-group label { display: inline; font-weight: normal; margin-bottom: 0; margin-right: 15px; cursor: pointer; }
+        .radio-group input[type="radio"] { width: auto; margin-right: 5px; cursor: pointer; }
+        
+        .image-container { display: flex; justify-content: center; margin: 15px 0; border: 1px solid #f0f0f0; border-radius: 8px; padding: 15px; background: #fff; }
+        .image-container img { max-width: 100%; height: auto; max-height: 180px; object-fit: contain; }
+        
+        .dimension-group, .rebar-group { display: none; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #eee; }
+        .dimension-group.active, .rebar-group.active { display: block; }
+        
+        .action-area { text-align: center; grid-column: 1 / -1; margin-top: 10px; padding-top: 20px; border-top: 1px solid #eee; }
+        button { padding: 12px 30px; font-size: 16px; font-weight: bold; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 6px; transition: background 0.2s; box-shadow: 0 2px 5px rgba(0,123,255,0.3); }
+        button:hover { background-color: #0056b3; }
+        
+        #result-container { margin-top: 30px; width: 100%; }
+        .htmx-indicator { display: none; margin-left: 15px; color: #666; font-weight: bold; }
+        .htmx-request.htmx-indicator { display: inline; }
+        .htmx-request .htmx-indicator { display: inline; }
+        
+        small { display: block; margin-top: 4px; line-height: 1.4; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 style="text-align: center; font-size: 24px; margin-bottom: 30px; color: #333;">Column Biaxial Analysis</h1>
+        <form id="analysis-form">
+            <div class="main-grid">
+                <!-- Column 1: Geometry & Material -->
+                <div class="column">
+                    <fieldset>
+                        <legend>Section Geometry</legend>
+                        <div class="input-row">
+                            <label for="section">Shape Profile:</label>
+                            <select id="section" name="section" onchange="toggleDimensions()">
+                                <option value="rectangle" selected>Rectangle</option>
+                                <option value="circle">Circle</option>
+                                <option value="L-shape-1">L-shape 1</option>
+                                <option value="L-shape-2">L-shape 2</option>
+                                <option value="L-shape-3">L-shape 3</option>
+                                <option value="L-shape-4">L-shape 4</option>
+                            </select>
+                        </div>
+
+                        <div class="image-container">
+                            <img id="shape-image" src="/images/rectangle.png" alt="Section Shape">
+                        </div>
+
+                        <div id="rect-dims" class="dimension-group active">
+                            <div class="input-grid">
+                                <div class="input-row">
+                                    <label for="width">Width (mm):</label>
+                                    <input type="number" id="width" name="width" value="300">
+                                </div>
+                                <div class="input-row">
+                                    <label for="height">Height (mm):</label>
+                                    <input type="number" id="height" name="height" value="500">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="circle-dims" class="dimension-group">
+                            <div class="input-row">
+                                <label for="diameter">Diameter (mm):</label>
+                                <input type="number" id="diameter" name="diameter" value="400">
+                            </div>
+                        </div>
+
+                        <div id="lshape-dims" class="dimension-group">
+                            <div class="input-grid">
+                                <div class="input-row">
+                                    <label for="dim_a">A (mm):</label>
+                                    <input type="number" id="dim_a" name="dim_a" value="500">
+                                </div>
+                                <div class="input-row">
+                                    <label for="dim_b">B (mm):</label>
+                                    <input type="number" id="dim_b" name="dim_b" value="500">
+                                </div>
+                                <div class="input-row">
+                                    <label for="dim_c">C (mm):</label>
+                                    <input type="number" id="dim_c" name="dim_c" value="150">
+                                </div>
+                                <div class="input-row">
+                                    <label for="dim_d">D (mm):</label>
+                                    <input type="number" id="dim_d" name="dim_d" value="150">
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend>Material Properties</legend>
+                        <div class="input-grid">
+                            <div class="input-row">
+                                <label for="fc">fc' (MPa):</label>
+                                <input type="number" id="fc" name="fc" value="30">
+                            </div>
+                            <div class="input-row">
+                                <label for="fy">fy (MPa):</label>
+                                <input type="number" id="fy" name="fy" value="400">
+                            </div>
+                        </div>
+                        <div class="input-row">
+                            <label>Transversal Rebar:</label>
+                            <div class="radio-group">
+                                <input type="radio" id="ties" name="transversal" value="ties" checked>
+                                <label for="ties">Ties</label>
+                                <input type="radio" id="spiral" name="transversal" value="spiral">
+                                <label for="spiral">Spiral</label>
+                                <input type="radio" id="other" name="transversal" value="other">
+                                <label for="other">Other</label>
+                            </div>
+                        </div>
+                    </fieldset>
+                </div>
+
+                <!-- Column 2: Reinforcement & Loads -->
+                <div class="column">
+                    <fieldset id="rebar-inputs">
+                        <legend>Reinforcement</legend>
+                        <div class="input-grid">
+                            <div class="input-row">
+                                <label for="rebar_dia">Diameter (mm):</label>
+                                <input type="number" id="rebar_dia" name="rebar_dia" value="16">
+                            </div>
+                            <div class="input-row">
+                                <label for="cover">Cover (mm) *:</label>
+                                <input type="number" id="cover" name="cover" value="40">
+                            </div>
+                        </div>
+                        <small style="color: #666; font-style: italic; margin-bottom: 15px;">* Measured from concrete surface to the center of rebar.</small>
+                        
+                        <div id="rect-rebar" class="rebar-group active">
+                            <div class="input-grid">
+                                <div class="input-row">
+                                    <label for="n_bottom">Bottom:</label>
+                                    <input type="number" id="n_bottom" name="n_bottom" value="3" min="2">
+                                </div>
+                                <div class="input-row">
+                                    <label for="n_top">Top:</label>
+                                    <input type="number" id="n_top" name="n_top" value="3" min="2">
+                                </div>
+                                <div class="input-row">
+                                    <label for="n_left">Left:</label>
+                                    <input type="number" id="n_left" name="n_left" value="3" min="2">
+                                </div>
+                                <div class="input-row">
+                                    <label for="n_right">Right:</label>
+                                    <input type="number" id="n_right" name="n_right" value="3" min="2">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="circle-rebar" class="rebar-group">
+                            <div class="input-row">
+                                <label for="n_total">Total Rebars:</label>
+                                <input type="number" id="n_total" name="n_total" value="8" min="4">
+                            </div>
+                        </div>
+
+                        <div id="lshape-rebar" class="rebar-group">
+                            <div class="input-grid">
+                                <div class="input-row">
+                                    <label for="n_a">Side A:</label>
+                                    <input type="number" id="n_a" name="n_a" value="3" min="2">
+                                </div>
+                                <div class="input-row">
+                                    <label for="n_b">Side B:</label>
+                                    <input type="number" id="n_b" name="n_b" value="3" min="2">
+                                </div>
+                                <div class="input-row">
+                                    <label for="n_c">Side C:</label>
+                                    <input type="number" id="n_c" name="n_c" value="3" min="2">
+                                </div>
+                                <div class="input-row">
+                                    <label for="n_d">Side D:</label>
+                                    <input type="number" id="n_d" name="n_d" value="2" min="2">
+                                </div>
+                                <div class="input-row">
+                                    <label for="n_e">Side E:</label>
+                                    <input type="number" id="n_e" name="n_e" value="2" min="2">
+                                </div>
+                                <div class="input-row">
+                                    <label for="n_f">Side F:</label>
+                                    <input type="number" id="n_f" name="n_f" value="2" min="2">
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
+                        <legend>Design Loads</legend>
+                        <div class="input-row">
+                            <label for="loads">Pu (KN), Mux (KN.m), Muy (KN.m):</label>
+                            <textarea id="loads" name="loads" rows="5" placeholder="Example:&#10;1000, 50, 20&#10;800, 30, 10"></textarea>
+                            <small style="color: #888; margin-top: 5px;">One load case per line.</small>
+                        </div>
+                    </fieldset>
+                </div>
+
+                <div class="action-area">
+                    <button type="button" 
+                            hx-get="/analyse"
+                            hx-include="#analysis-form"
+                            hx-target="#result-container"
+                            hx-swap="innerHTML"
+                            hx-on::before-request="this.innerText='Processing Analysis...'; this.disabled=true;"
+                            hx-on::after-request="this.innerText='Run Analysis'; this.disabled=false;">
+                        Run Analysis
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+    
+    <div id="result-container"></div>
+
+    <script>
+        function toggleDimensions() {
+            const shape = document.getElementById('section').value;
+            const img = document.getElementById('shape-image');
+            
+            // Update image source
+            const imageMap = {
+                'rectangle': 'rectangle.png',
+                'circle': 'circle.png',
+                'L-shape-1': 'L1.png',
+                'L-shape-2': 'L2.png',
+                'L-shape-3': 'L3.png',
+                'L-shape-4': 'L4.png'
+            };
+            
+            if (imageMap[shape]) {
+                img.src = '/images/' + imageMap[shape];
+            }
+            
+            // Hide all groups
+            document.querySelectorAll('.dimension-group, .rebar-group').forEach(el => el.classList.remove('active'));
+            
+            // Show selected groups
+            if (shape === 'rectangle') {
+                document.getElementById('rect-dims').classList.add('active');
+                document.getElementById('rect-rebar').classList.add('active');
+            } else if (shape === 'circle') {
+                document.getElementById('circle-dims').classList.add('active');
+                document.getElementById('circle-rebar').classList.add('active');
+            } else if (shape.startsWith('L-shape')) {
+                document.getElementById('lshape-dims').classList.add('active');
+                document.getElementById('lshape-rebar').classList.add('active');
+            }
+        }
+        
+        // Ensure correct dimensions and image are shown on initial page load (e.g., after browser refresh)
+        document.addEventListener("DOMContentLoaded", toggleDimensions);
+    </script>
+</body>
+</html>
