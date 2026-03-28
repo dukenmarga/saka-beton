@@ -183,13 +183,18 @@ class ConcreteInteractionDiagram:
         # Get Xe, Ye: the farthest point on the compression side.
         # tens_node: farthest node on tension side (not always true, but it is the least value)
         # comp_node: farthest node on compression side
+        # Initial assumption is the first is in tension, the second is in compression
         tens_node, comp_node = geometry.find_farthest_node(concrete_boundary_local)
         # xec, yec: x and y coordinate of the farthest compression point (local coordinate)
-        # yec: must be positive, since compression height is positive above the neutral axis.
-        # yec must be checked by the caller: if negative, it indicates that neutral axis is beyond the concrete boundary
         xec, yec = comp_node[0], comp_node[1]
         # xet, yet: x and y coordinate of the farthest tension point (local coordinate)
         xet, yet = tens_node[0], tens_node[1]
+
+        # yec must be positive, since compression height is positive above the neutral axis.
+        # If yec negative, then our initial assumption is wrong. We just need to swap
+        # compression and tension.
+        if yec < 0:
+            xec, yec, xet, yet = xet, yet, xec, yec
 
         # Make a point on the farthest compression point and tension (local)
         xeye_c = np.array([[xec, yec]])
@@ -207,9 +212,6 @@ class ConcreteInteractionDiagram:
         XeYe_c_point = Point(Xec, Yec)
         Xeye_t_point = Point(Xet, Yet)
 
-        # TODO: c returned here is not always the max depth
-        # We calculate c from origin O. But, actually, it can also
-        # below the origin. How to handle this?
         # c: the depth (distance) from the neutral axis perpendicular to the farthest compression point
         # t: the depth (distance) from the neutral axis perpendicular to the farthest tension point
         # c and t are both positive
@@ -355,11 +357,6 @@ class ConcreteInteractionDiagram:
         # ye: y coordinate of the most compressed point (local axis)
         c, Xe, Ye, xe, ye, _, _, _, _, _  = self.calculate_depth(na_line=na_line)
 
-        # ye must be positive, since it is the y coordinate of the most compressed point above neutral axis.
-        # If negative, it means neutral axis is beyond the most compressed point (beyond concrete boundary).
-        if ye < 0:
-            raise ValueError("c < 0. This is not allowed.")
-
         # TODO: I think we can remove Xa, Ya, Xe, Ye at this point, since we don't
         # need local origin anymore in the next step
         # We can just make midline along neutral axis and set it as local origin
@@ -388,9 +385,6 @@ class ConcreteInteractionDiagram:
         # Xe, Ye: indicator of the most compressed point, so it knows which part
         # is in compression
         compression_part = geometry.get_compression_part(concrete_polygon, comp_line, (Xe, Ye))
-
-        # TODO: concrete boundary seharusnya sudah dikurangi sehingga 0.85 C saja yang diconsider untuk
-        # Whitney stress block
 
         # Calculate Pn, Mnx, Mny using Whitney stress block
         Pcn = 0
