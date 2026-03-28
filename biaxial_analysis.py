@@ -487,55 +487,53 @@ class ConcreteInteractionDiagram:
         Find combination of Mnx and Mny, such that Pn is close to Pn_target
             by utilizing secant method.
         """
-        Pn0, _, _, _ = self.find_Pn_Mn(alpha, h_min)
-        Pn1, Mnx1, Mny1, eps_t = self.find_Pn_Mn(alpha, h_max)
-        h0 = h_min
-        h1 = h_max
-
         iter_count = 0
+        h1 = h_min
+        h2 = h_max
+        Pn1, _, _, _ = self.find_Pn_Mn(alpha, h1)
+
         while iter_count < max_iter:
             iter_count += 1
-
-            # Return the result if the iteration has reached the convergence
-            if abs(Pn1 - Pn_target) < tol:
-                return Pn1, Mnx1, Mny1, eps_t
-
-            # Avoid division by zero
-            if abs(Pn1 - Pn0) < 1e-6:
-                raise ValueError("Failed: Pn0 and Pn1 is too close")
-            
-            # Update the new value by using secant formula:
-            # h_new = h1 - f(h1) * (h1 - h0) / (f(h1) - f(h0))
-            h_new = h1 - (Pn1 - Pn_target) * (h1 - h0) / (Pn1 - Pn0)
-
             error = False
 
-            # Recalculate using the new value
             try:
-                Pn_new, Mnx1, Mny1, eps_t = self.find_Pn_Mn(alpha, h_new)
+                Pn2, Mnx2, Mny2, eps_t = self.find_Pn_Mn(alpha, h2)
             except ValueError:
                 error = True
 
-            # If h0 and h1 are out of range (getting bigger for each iteration),
-            # it indicates that the method is not converging.
-            # The possibility is initial h0 and h1 are wrong.
-            # Hence, we need to swap h0 and h1 (based on h_min and h_max).
-            # We choose 5_000 as limit, since physically it is very unlikely
-            # to have a concrete dimension greater than 5_000 mm
-            if abs(h0) > 5_000 or abs(h1) > 5_000:
+            # Avoid division by zero
+            if abs(Pn2 - Pn1) < 1e-6:
                 error = True
 
-            # If there is an error, we are attempting to swap h0 and h1
+            # If h1 and h2 are out of range (getting bigger for each iteration),
+            # it indicates that the method is not converging.
+            # The possibility is initial h1 and h2 are wrong.
+            # Hence, we need to swap h1 and h2 (based on h_min and h_max).
+            # We choose 5_000 as limit, since physically it is very unlikely
+            # to have a concrete dimension greater than 5_000 mm
+            elif abs(h1) > 5_000 or abs(h2) > 5_000:
+                error = True
+
+            # If there is an error, we are attempting to swap h1 and h2
             if error:
                 # Reset and swap values (opposite of initial value before looping)
-                h0 = h_max
-                h1 = h_min
-                Pn0, _, _, _ = self.find_Pn_Mn(alpha, h_max)
-                Pn1, Mnx1, Mny1, eps_t = self.find_Pn_Mn(alpha, h_min)
-            else:
-                # Update the values for next iteration if there is no error
-                h0, Pn0 = h1, Pn1
-                h1, Pn1 = h_new, Pn_new
+                h1 = h_max
+                h2 = h_min
+                Pn1, _, _, _ = self.find_Pn_Mn(alpha, h1)
+                continue
+
+            # Update the new value by using secant formula:
+            # h_new = h2 - [f(h2) - target] * (h2 - h1) / (f(h2) - f(h1))
+            h3 = h2 - (Pn2 - Pn_target) * (h2 - h1) / (Pn2 - Pn1)
+
+            # Return the result if the iteration has reached the convergence
+            if abs(Pn2 - Pn_target) < tol:
+                return Pn2, Mnx2, Mny2, eps_t
+
+            # Update the values for next iteration if there is no error
+            # and still not reaching the convergence
+            h1, Pn1 = h2, Pn2
+            h2 = h3
 
         return 0, 0, 0, 0
 
