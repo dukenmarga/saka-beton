@@ -78,7 +78,7 @@ def find_farthest_node(nodes: np.ndarray):
 def calculate_rebar_area(rebar_dia: np.ndarray):
     """Calculate rebar area
     """
-    return np.pi * rebar_dia ** 2
+    return np.pi * rebar_dia ** 2 / 4
 
 def calculate_concrete_area(concrete_boundary: np.ndarray):
     """Calculate concrete area
