@@ -13,6 +13,12 @@ class Material:
         self.eps_su = eps_su
 
     def concrete_stress_strain(self, eps_c: float):
+        """
+        Returns the concrete stress-strain curve (parabolic),
+        based on Hognestad model:
+        A Study of Combined Bending and Axial Load in Reinforced Concrete Members
+        Hognestad, Eivind (1951)
+        """
         fc_ = self.fc_
         gamma = self.gamma
         eps_0 = self.epsilon_0
@@ -28,16 +34,18 @@ class Material:
         # Descending line
         A = eps_c - eps_0
         B = eps_u - eps_0
-        return fc_ * (1 - gamma * (A / B))
+        return 0.85 * fc_ * (1 - gamma * (A / B))
 
     def concrete_stress_strain_ufunc(self, eps_c: float):
         return np.vectorize(self.concrete_stress_strain, otypes=[float])(eps_c)
 
-    # Calculate stress-strain curve for steel rebar
-    # Developed from paper:
-    # Stress-strain model for grade 275 reinforcing steel with cyclic loading
-    # K. J. Thompson and R. Park (1978)
     def steel_rebar_stress_strain(self, eps_s: float):
+        """
+        Calculate stress-strain curve for steel rebar
+        Developed from paper:
+        Stress-strain model for grade 275 reinforcing steel with cyclic loading
+        K. J. Thompson and R. Park (1978)
+        """
         Es = self.Es
         fy = self.fy
         fsu = self.fsu

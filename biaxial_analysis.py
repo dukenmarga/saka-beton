@@ -746,7 +746,7 @@ class ConcreteInteractionDiagram:
         y_depth = y_centroid_compress - YO
 
         # Calculate Pn, Mnx, Mny
-        # 0.85 is Hognestaad effect
+        # 0.85 is reduction due to size effect based on Hognestad research
         Pn = 0.85 * compression_area * self.material.fc_ / 1e3
         Mnx = 0.85 * compression_area * self.material.fc_ * y_depth / 1e6
         Mny = 0.85 * compression_area * self.material.fc_ * x_depth / 1e6
