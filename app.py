@@ -14,7 +14,11 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    license_content = ""
+    if os.path.exists("LICENSE"):
+        with open("LICENSE", "r") as f:
+            license_content = f.read()
+    return render_template("index.html", license_content=license_content)
 
 
 @app.route("/images/<path:filename>")
