@@ -417,8 +417,8 @@ class ConcreteInteractionDiagram:
         # is in compression
         compression_parts = geometry.get_compression_part(concrete_polygon, na_line, (Xe, Ye))
 
-        # Calculate Pn, Mnx, Mny using Whitney stress block
-        whitney_factor = 0.85
+        # TODO: Whitney coefficient is determined by the fc'
+        beta = 0.85
 
         Pcn = 0
         Mcnx = 0
@@ -427,9 +427,9 @@ class ConcreteInteractionDiagram:
         # Calculate Pn, Mnx, Mny for each compression part 
         for compression_parts in compression_parts:
             Pcn_part, Mcnx_part, Mcny_part = self.Pcn_Mcnx_Mcny(compression_parts, XO, YO)
-            Pcn += Pcn_part * whitney_factor
-            Mcnx += Mcnx_part
-            Mcny += Mcny_part
+            Pcn +=  beta * Pcn_part
+            Mcnx +=  beta * Mcnx_part
+            Mcny +=  beta * Mcny_part
 
         ##########
         # STRESS #
@@ -719,8 +719,9 @@ class ConcreteInteractionDiagram:
         fy = self.material.fy
         concrete_area = geometry.calculate_concrete_area(self.concrete_boundary[['x', 'y']].values)
         rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].values))
-        whitney = 0.85
-        return (whitney * fc_ * (concrete_area-rebar_area) + fy * rebar_area) / 1e3
+        # TODO: Whitney coefficient is determined from the fc'
+        beta = 0.85
+        return (beta * 0.85 * fc_ * (concrete_area-rebar_area) + fy * rebar_area) / 1e3
 
     def Pcn_Mcnx_Mcny(self, concrete_compression_boundary_xy: np.ndarray, XO: float, YO: float):
         """
@@ -745,9 +746,10 @@ class ConcreteInteractionDiagram:
         y_depth = y_centroid_compress - YO
 
         # Calculate Pn, Mnx, Mny
-        Pn = compression_area * self.material.fc_ / 1e3
-        Mnx = compression_area * self.material.fc_ * y_depth / 1e6
-        Mny = compression_area * self.material.fc_ * x_depth / 1e6
+        # 0.85 is Hognestaad effect
+        Pn = 0.85 * compression_area * self.material.fc_ / 1e3
+        Mnx = 0.85 * compression_area * self.material.fc_ * y_depth / 1e6
+        Mny = 0.85 * compression_area * self.material.fc_ * x_depth / 1e6
 
         return Pn, Mnx, Mny
 
