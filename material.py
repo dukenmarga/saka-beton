@@ -1,10 +1,9 @@
 import numpy as np
 
 class Material:
-    def __init__(self, fc_, fy, fc__, fsu, epsilon_0, epsilon_u, gamma, Es, eps_sh, eps_su):
+    def __init__(self, fc_, fy, fsu, epsilon_0, epsilon_u, gamma, Es, eps_sh, eps_su):
         self.fc_ = fc_
         self.fy = fy
-        self.fc__ = 0.85 * fc_ if fc__ is None else fc__
         self.fsu = 1.1 * fy if fsu is None else fsu
         self.epsilon_0 = epsilon_0
         self.epsilon_u = epsilon_u
@@ -14,7 +13,7 @@ class Material:
         self.eps_su = eps_su
 
     def concrete_stress_strain(self, eps_c: float):
-        fc__ = self.fc__
+        fc_ = self.fc_
         gamma = self.gamma
         eps_0 = self.epsilon_0
         eps_u = self.epsilon_u
@@ -25,11 +24,11 @@ class Material:
         if eps_c <= eps_0:
             A = 2 * eps_c / eps_0
             B = (eps_c / eps_0) ** 2
-            return fc__ * (A - B)
+            return fc_ * (A - B)
         # Descending line
         A = eps_c - eps_0
         B = eps_u - eps_0
-        return fc__ * (1 - gamma * (A / B))
+        return fc_ * (1 - gamma * (A / B))
 
     def concrete_stress_strain_ufunc(self, eps_c: float):
         return np.vectorize(self.concrete_stress_strain, otypes=[float])(eps_c)
