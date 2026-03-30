@@ -59,6 +59,10 @@ class Material:
         # fs = fy
         if eps_s <= eps_sh:
             return fy * sign
+
+        return fy * sign
+
+        # Note: Strain hardening region is not included at the moment.
         # Region 3 (Strain hardening)
         if eps_s <= eps_su:
             q = eps_su - eps_sh
