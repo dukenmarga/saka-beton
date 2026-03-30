@@ -6,6 +6,7 @@ import shapely
 import math
 import pygmsh
 import copy
+from scipy.optimize import brentq
 from shapely import LineString, Polygon, Point
 from shapely.affinity import rotate
 from typing import Literal
@@ -28,7 +29,6 @@ class ConcreteInteractionDiagram:
             rebar: pd.DataFrame,
             fc_ = 30, # MPa
             fy = 400, # MPa
-            fc__ = None,
             fsu = None, # MPa
             epsilon_0 = 0.002,
             epsilon_u = 0.0038,
@@ -48,7 +48,7 @@ class ConcreteInteractionDiagram:
         self._rebar = rebar
 
         # Define material properties
-        self.material = Material(fc_, fy, fc__, fsu, epsilon_0, epsilon_u, gamma, Es, eps_sh, eps_su)
+        self.material = Material(fc_, fy, fsu, epsilon_0, epsilon_u, gamma, Es, eps_sh, eps_su)
         self.sni = SNI_2847_2019(transverse)
 
         # Define ultimate loads
@@ -83,6 +83,27 @@ class ConcreteInteractionDiagram:
     @property
     def rebar(self):
         return self._rebar
+
+    def _brent_method(self, Pn_target: float, alpha: float = 0,
+                      h_min: float = -100, h_max: float = 100,
+                      tol: float = 1e-1, max_iter: float = 100):
+        """
+        Find combination of Mnx and Mny, such that Pn is close to Pn_target
+            by utilizing Brent method.
+        """
+        d, r = brentq(
+            f=self.find_Pn,
+            a=h_min,
+            b=h_max,
+            args=(alpha, Pn_target),
+            full_output=True,
+            disp=False,
+            xtol=tol,
+            rtol=tol,
+            maxiter=max_iter
+        )
+        h = float(d)
+        return self.find_Pn_Mn(h, alpha)
 
     def calculate_centroids(self, points: np.ndarray):
         """
@@ -170,7 +191,7 @@ class ConcreteInteractionDiagram:
         YO = self.YO
 
         # Find midline along neutral axis and set it as local origin
-        mid_na = na_line.interpolate(0.5)
+        mid_na = na_line.interpolate(0.5, True)
 
         # Extract x,y coordinates
         x_na, y_na = mid_na.x, mid_na.y
@@ -276,12 +297,14 @@ class ConcreteInteractionDiagram:
         return min_x, min_y
 
     def _find_Mnx_Mny_at_Pn(self, Pn_target, alpha, h_min, h_max, method="secant", tol=1e-1, max_iter=100):
-        """Find Mnx and Mny such that Pn is close to Pn_target
         """
+        Find Mnx and Mny such that Pn is close to Pn_target
+        """
+        if method == "brent":
+            tol = min(1e-4, tol)
+            return self._brent_method(Pn_target, alpha, h_min, h_max, tol, max_iter)
         if method == "secant":
             return self._secant_method(Pn_target, alpha, h_min, h_max, tol, max_iter)
-        if method == "bisection":
-            return self._bisection_method(Pn_target, alpha, h_min, h_max, tol, max_iter)
         raise ValueError(f"Unknown method: {method}")
 
     def find_Mx_My_at_P(self, P: float, alpha: float):
@@ -297,10 +320,14 @@ class ConcreteInteractionDiagram:
         c_max, _, _, _, _, t_max, _, _, _, _ = self.calculate_depth(na)
 
         # h_min and h_max are limit where we will iterate to find Mnx and Mny.
+        # h is measure from top of compression zone.
+        # h = 5 mm means the distance from top of compression zone to the neutral axis.
         # Avoid h at the farthest point of compression and tension
-        # to avoid numerical error (no compression or tension area is formed)
-        h_min = -t_max + 5
-        h_max = c_max - 5
+        # to avoid numerical error (no compression or tension area is formed).
+        # Hence we offset 1mm from top and bottom   
+        h_total = c_max + t_max
+        h_min =  1
+        h_max = h_total - 1
 
         Pn, Mnx, Mny, eps_t = self._find_Mnx_Mny_at_Pn(P, alpha, h_min, h_max)
 
@@ -317,7 +344,11 @@ class ConcreteInteractionDiagram:
 
         return Pn, Mnx, Mny, theta, phi
 
-    def find_Pn_Mn(self, alpha: float = 0, h: float = 10):
+    def find_Pn(self, h: float = 10, alpha: float = 0, Pn_target: float = 0):
+        Pn, _, _, _ = self.find_Pn_Mn(h, alpha)
+        return Pn - Pn_target
+
+    def find_Pn_Mn(self, h: float = 10,alpha: float = 0):
         """
         Calculate Pn, Mnx, Mny from alpha and h
             alpha is in degrees
@@ -328,6 +359,29 @@ class ConcreteInteractionDiagram:
         XO = self.XO
         YO = self.YO
 
+        # Construct benchmark line from a (0,0) that rotates to alpha
+        helper_line = self.construct_neutral_axis(point_on_na=(XO, YO), alpha=alpha)
+
+        # Calculate:
+        # c: compression depth
+        # Xe: x coordinate of the most compressed point (global axis)
+        # Ye: y coordinate of the most compressed point (global axis)
+        # xe: x coordinate of the most compressed point (local axis)
+        # ye: y coordinate of the most compressed point (local axis)
+        # ye value is the same as c
+        c, Xe, Ye, xe, ye, _, _, _, _, _  = self.calculate_depth(na_line=helper_line)
+
+        # This is a point in neutral axis that is h units away from the most compressed point
+        # It still uses local coordinates.
+        na_point = np.array([[xe, ye-h]])
+
+        # Map from local to global.
+        # The NA point uses global coordinates.
+        na_point = geometry.map_to_global(na_point, XO, YO, XO, YO, helper_line)
+
+        # Construct neutral axis (away h units from xe, ye)
+        na_line = self.construct_neutral_axis(point_on_na=(na_point[0][0], na_point[0][1]), alpha=alpha)
+
         # Isolate concrete boundary and rebar locally to this function only
         # - Readability
         concrete_boundary = copy.copy(self.concrete_boundary)
@@ -336,42 +390,19 @@ class ConcreteInteractionDiagram:
         # Make a polygon from the concrete boundary
         concrete_polygon = Polygon(concrete_boundary[['x', 'y']].values)
 
-        # Translate h into horizontal and vertical distance.
-        # h is (usually diagonal) perpendicular distance from origin to neutral axis.
-        # Translation made so that we know where our neutral axis is going to move in
-        # horizontal and vertical direction from origin.
-        bh = h * np.sin(alpha*np.pi/180)
-        bv = h * np.cos(alpha*np.pi/180)
-
-        # Construct neutral axis from a point on neutral axis and its angle
-        na_line = self.construct_neutral_axis(point_on_na=(XO+bh, YO+bv), alpha=alpha)
-
-        whitney_factor = 0.85
-        comp_line = self.construct_neutral_axis(point_on_na=(XO+bh*whitney_factor, YO+bv*whitney_factor), alpha=alpha)
-
-        # Calculate:
-        # c: compression depth
-        # Xe: x coordinate of the most compressed point (global axis)
-        # Ye: y coordinate of the most compressed point (global axis)
-        # xe: x coordinate of the most compressed point (local axis)
-        # ye: y coordinate of the most compressed point (local axis)
-        c, Xe, Ye, xe, ye, _, _, _, _, _  = self.calculate_depth(na_line=na_line)
-
-        # TODO: I think we can remove Xa, Ya, Xe, Ye at this point, since we don't
-        # need local origin anymore in the next step
-        # We can just make midline along neutral axis and set it as local origin
-
         # Calculate coordinate O' (Xa, Ya) in global axis
-        Xa = Xe + c * np.sin(alpha * np.pi / 180)
-        Ya = Ye - c * np.cos(alpha * np.pi / 180)
+        mid_na_line = na_line.interpolate(0.5, True)
+        Xa = mid_na_line.x
+        Ya = mid_na_line.y
 
         # Remap concrete boundary and rebar coordinates in the rotated coordinate system (Neutral Axis) using new O'.
         rebar_local = geometry.map_to_local(rebar[['x', 'y']].values, XO, YO, Xa, Ya, na_line)
 
         rebar_local_pd = pd.DataFrame(rebar_local, columns=['x', 'y'])
 
-        # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye
-        rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, ye)
+        # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
+        # We use h, since it the location of the neutral axis
+        rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, h)
         # Concat strain (relative to Neutral Axis line)
         rebar['strain'] = rebar_strain_local
 
@@ -384,16 +415,19 @@ class ConcreteInteractionDiagram:
         # the neutral axis
         # Xe, Ye: indicator of the most compressed point, so it knows which part
         # is in compression
-        compression_part = geometry.get_compression_part(concrete_polygon, comp_line, (Xe, Ye))
+        compression_parts = geometry.get_compression_part(concrete_polygon, na_line, (Xe, Ye))
 
         # Calculate Pn, Mnx, Mny using Whitney stress block
+        whitney_factor = 0.85
+
         Pcn = 0
         Mcnx = 0
         Mcny = 0
+
         # Calculate Pn, Mnx, Mny for each compression part 
-        for i in range(0, len(compression_part)):
-            Pcn_part, Mcnx_part, Mcny_part = self.Pcn_Mcnx_Mcny(compression_part[i], XO, YO)
-            Pcn += Pcn_part
+        for compression_parts in compression_parts:
+            Pcn_part, Mcnx_part, Mcny_part = self.Pcn_Mcnx_Mcny(compression_parts, XO, YO)
+            Pcn += Pcn_part * whitney_factor
             Mcnx += Mcnx_part
             Mcny += Mcny_part
 
@@ -484,14 +518,16 @@ class ConcreteInteractionDiagram:
         iter_count = 0
         h1 = h_min
         h2 = h_max
-        Pn1, _, _, _ = self.find_Pn_Mn(alpha, h1)
+        h3 = 0
+        Pn1, _, _, _ = self.find_Pn_Mn(h1, alpha)
 
+        max_iter = 300
         while iter_count < max_iter:
             iter_count += 1
             error = False
 
             try:
-                Pn2, Mnx2, Mny2, eps_t = self.find_Pn_Mn(alpha, h2)
+                Pn2, Mnx2, Mny2, eps_t = self.find_Pn_Mn(h2, alpha)
             except ValueError:
                 error = True
 
@@ -513,7 +549,7 @@ class ConcreteInteractionDiagram:
                 # Reset and swap values (opposite of initial value before looping)
                 h1 = h_max
                 h2 = h_min
-                Pn1, _, _, _ = self.find_Pn_Mn(alpha, h1)
+                Pn1, _, _, _ = self.find_Pn_Mn(h1, alpha)
                 continue
 
             # Update the new value by using secant formula:
@@ -683,7 +719,8 @@ class ConcreteInteractionDiagram:
         fy = self.material.fy
         concrete_area = geometry.calculate_concrete_area(self.concrete_boundary[['x', 'y']].values)
         rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].values))
-        return (0.85 * fc_ * (concrete_area-rebar_area) + fy * rebar_area) / 1e3
+        whitney = 0.85
+        return (whitney * fc_ * (concrete_area-rebar_area) + fy * rebar_area) / 1e3
 
     def Pcn_Mcnx_Mcny(self, concrete_compression_boundary_xy: np.ndarray, XO: float, YO: float):
         """
@@ -708,9 +745,9 @@ class ConcreteInteractionDiagram:
         y_depth = y_centroid_compress - YO
 
         # Calculate Pn, Mnx, Mny
-        Pn = compression_area * self.material.fc__ / 1e3
-        Mnx = compression_area * self.material.fc__ * y_depth / 1e6
-        Mny = compression_area * self.material.fc__ * x_depth / 1e6
+        Pn = compression_area * self.material.fc_ / 1e3
+        Mnx = compression_area * self.material.fc_ * y_depth / 1e6
+        Mny = compression_area * self.material.fc_ * x_depth / 1e6
 
         return Pn, Mnx, Mny
 
