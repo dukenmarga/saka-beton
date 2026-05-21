@@ -13,14 +13,11 @@ def map_to_local(nodes: np.ndarray, x_cen_glob: float, y_cen_glob: float, x_cen_
     Ya = y_cen_loc - y_cen_glob
     cos_alpha = cos_from_line(line)
     sin_alpha = sin_from_line(line)
-    nodes_local: np.ndarray = np.ndarray((0, 2))
-    for i, (Xi, Yi) in enumerate(nodes):
-        x_ = (Xi - Xa) * cos_alpha + (Ya - Yi) * sin_alpha
-        y_ = (Yi - Ya) * cos_alpha + (Xi - Xa) * sin_alpha
-
-        nodes_local = np.append(nodes_local, np.array([[x_, y_]]), axis=0)
-    
-    return nodes_local
+    Xi = nodes[:, 0]
+    Yi = nodes[:, 1]
+    x_ = (Xi - Xa) * cos_alpha + (Ya - Yi) * sin_alpha
+    y_ = (Yi - Ya) * cos_alpha + (Xi - Xa) * sin_alpha
+    return np.column_stack((x_, y_))
 
 def map_to_global(local_nodes: np.ndarray, x_cen_glob: float, y_cen_glob: float, x_cen_loc: float, y_cen_loc: float, line: LineString):
     """Transform nodes coordinate from local to global,
@@ -36,12 +33,7 @@ def map_to_global(local_nodes: np.ndarray, x_cen_glob: float, y_cen_glob: float,
     sin_alpha = sin_from_line(line)
     Xi = Xa + x*cos_alpha + y*sin_alpha
     Yi = Ya - x*sin_alpha + y*cos_alpha
-
-    nodes_global = np.ndarray((0, 2))
-    for i, (Xi, Yi) in enumerate(zip(Xi, Yi)):
-        nodes_global = np.append(nodes_global, np.array([[Xi, Yi]]), axis=0)
-    
-    return nodes_global
+    return np.column_stack((Xi, Yi))
 
 def sin_from_line(line: LineString):
     x1 = line.coords[0][0]
