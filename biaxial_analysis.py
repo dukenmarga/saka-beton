@@ -229,17 +229,7 @@ class ConcreteInteractionDiagram:
         Xec, Yec = XeYe_c[0][0], XeYe_c[0][1]
         Xet, Yet = XeYe_t[0][0], XeYe_t[0][1]
 
-        # Make a point on the farthest compression point and tension (global)
-        XeYe_c_point = Point(Xec, Yec)
-        Xeye_t_point = Point(Xet, Yet)
-
-        # c: the depth (distance) from the neutral axis perpendicular to the farthest compression point
-        # t: the depth (distance) from the neutral axis perpendicular to the farthest tension point
-        # c and t are both positive
-        c = shapely.distance(XeYe_c_point, na_line)
-        t = shapely.distance(Xeye_t_point, na_line)
-
-        return c, Xec, Yec, xec, yec, t, Xet, Yet, xet, yet
+        return xec, yec, Xec, Yec, xet, yet,Xet, Yet
 
     def calculate_strain(self, rebar_y: np.ndarray, y_comp: float):
         """
@@ -317,7 +307,7 @@ class ConcreteInteractionDiagram:
         na = self.construct_neutral_axis(point_on_na=(0, 0), alpha=alpha)
 
         # Get maximum depth from neutral axis to the farthest point of compression and tension
-        c_max, _, _, _, _, t_max, _, _, _, _ = self.calculate_depth(na)
+        _, yec, _, _, _, yet, _, _ = self.calculate_depth(na)
 
         # h_min and h_max are limit where we will iterate to find Mnx and Mny.
         # h is measure from top of compression zone.
@@ -325,7 +315,7 @@ class ConcreteInteractionDiagram:
         # Avoid h at the farthest point of compression and tension
         # to avoid numerical error (no compression or tension area is formed).
         # Hence we offset 1mm from top and bottom   
-        h_total = c_max + t_max
+        h_total = yec + (-yet)
         h_min =  1
         h_max = h_total - 1
 
@@ -363,17 +353,16 @@ class ConcreteInteractionDiagram:
         helper_line = self.construct_neutral_axis(point_on_na=(XO, YO), alpha=alpha)
 
         # Calculate:
-        # c: compression depth
-        # Xe: x coordinate of the most compressed point (global axis)
-        # Ye: y coordinate of the most compressed point (global axis)
-        # xe: x coordinate of the most compressed point (local axis)
-        # ye: y coordinate of the most compressed point (local axis)
-        # ye value is the same as c
-        c, Xe, Ye, xe, ye, _, _, _, _, _  = self.calculate_depth(na_line=helper_line)
+        # xec: x coordinate of the most compressed point (local axis)
+        # yec: y coordinate of the most compressed point (local axis)
+        # yec = compression depth (same as c)
+        # Xec: x coordinate of the most compressed point (global axis)
+        # Yec: y coordinate of the most compressed point (global axis)
+        xec, yec, Xec, Yec, _, _, _, _ = self.calculate_depth(na_line=helper_line)
 
         # This is a point in neutral axis that is h units away from the most compressed point
         # It still uses local coordinates.
-        na_point = np.array([[xe, ye-h]])
+        na_point = np.array([[xec, yec-h]])
 
         # Map from local to global.
         # The NA point uses global coordinates.
@@ -415,7 +404,7 @@ class ConcreteInteractionDiagram:
         # the neutral axis
         # Xe, Ye: indicator of the most compressed point, so it knows which part
         # is in compression
-        compression_parts = geometry.get_compression_part(concrete_polygon, na_line, (Xe, Ye))
+        compression_parts = geometry.get_compression_part(concrete_polygon, na_line, (Xec, Yec))
 
         # TODO: Whitney coefficient is determined by the fc'
         beta = 0.85
