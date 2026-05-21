@@ -248,7 +248,7 @@ class ConcreteInteractionDiagram:
         Check if the boundary is closed.
         If not, close it
         """
-        if self.first_and_last_node_same(self.concrete_boundary[['x', 'y']].values):
+        if not self.first_and_last_node_same(self.concrete_boundary[['x', 'y']].values):
             first_point = self.concrete_boundary.loc[[0]]
             self._concrete_boundary = pd.concat([self.concrete_boundary, first_point], axis=0, ignore_index=True)
 
