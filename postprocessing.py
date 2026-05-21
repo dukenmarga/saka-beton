@@ -240,10 +240,10 @@ class Plot:
                 continue
 
             # Plot nominal capacity
-            Mn = result['Pn'][i]
+            Pn = result['Pn'][i]
             Mnx = [*result['Mnx'], result['Mnx'][0]]
             Mny = [*result['Mny'], result['Mny'][0]]
-            linestyle = '--' if Mn < 0 else '-'
+            linestyle = '--' if Pn < 0 else '-'
 
             i_col = i % len(colors)
             ax.plot(Mnx, Mny, c=colors[i_col], linestyle=linestyle)
