@@ -15,8 +15,6 @@ def map_to_local(nodes: np.ndarray, x_cen_glob: float, y_cen_glob: float, x_cen_
     sin_alpha = sin_from_line(line)
     nodes_local: np.ndarray = np.ndarray((0, 2))
     for i, (Xi, Yi) in enumerate(nodes):
-        p = Point(Xi, Yi)
-        y_ = shapely.distance(line, p)
         x_ = (Xi - Xa) * cos_alpha + (Ya - Yi) * sin_alpha
         y_ = (Yi - Ya) * cos_alpha + (Xi - Xa) * sin_alpha
 
