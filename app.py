@@ -136,13 +136,15 @@ def analyse():
         )
 
         if result.returncode == 0:
-            os.remove(random_name)
             return ""
         else:
             return f"<div style='color:red; border:1px solid red; padding:15px; border-radius:8px; text-align:center;'><h2>Error:</h2><pre style='text-align:left;'>{result.stderr}</pre></div>"
-
     except Exception as e:
         return f"<div style='color:red; border:1px solid red; padding:15px; border-radius:8px; text-align:center;'><h2>Terjadi kesalahan:</h2><p>{str(e)}</p></div>"
+    finally:
+        # Remove temporary file
+        os.remove(random_name)
+
 
 
 if __name__ == "__main__":

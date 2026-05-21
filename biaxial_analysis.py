@@ -863,7 +863,7 @@ class ConcreteInteractionDiagram:
         phix = sni.compute_phi(reduction_type="compression", eps_t=0, eps_y=self.material.fy / self.material.Es)
         phiPn_max = sni.compute_phiPn_max(phix * Pn_max)
         rc.capacity.append({
-            "Pn": [sni.compute_phiPn(phi, Pn, phiPn_max) for phi, Pn in zip(phi0, Pn0)],
+            "Pn": [sni.compute_phiPn(phi, Pn, phiPn_max) for phi, Pn in zip(phis, Pnc)],
             "Mnx": zeros,
             "Mny": zeros,
             "theta": zeros,
