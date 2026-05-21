@@ -48,6 +48,34 @@ class Material:
         """
         Es = self.Es
         fy = self.fy
+        eps_sh = self.eps_sh
+
+        sign = 1
+        eps_y = fy / Es
+        if eps_s < 0:
+            sign = -1
+            eps_s = -eps_s
+
+        # Region 1 (Elastic)
+        # fs = Es * eps_s
+        if eps_s <= eps_y:
+            return Es * eps_s * sign
+        # Region 2 (Plateau)
+        # fs = fy
+        if eps_s <= eps_sh:
+            return fy * sign
+
+        return fy * sign
+
+    def steel_rebar_stress_strain_with_strain_hardening(self, eps_s: float):
+        """
+        Calculate stress-strain curve for steel rebar
+        Developed from paper:
+        Stress-strain model for grade 275 reinforcing steel with cyclic loading
+        K. J. Thompson and R. Park (1978)
+        """
+        Es = self.Es
+        fy = self.fy
         fsu = self.fsu
         eps_sh = self.eps_sh
         eps_su = self.eps_su
@@ -67,9 +95,6 @@ class Material:
         if eps_s <= eps_sh:
             return fy * sign
 
-        return fy * sign
-
-        # Note: Strain hardening region is not included at the moment.
         # Region 3 (Strain hardening)
         if eps_s <= eps_su:
             q = eps_su - eps_sh
