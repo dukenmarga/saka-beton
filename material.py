@@ -12,7 +12,7 @@ class Material:
         self.eps_sh = eps_sh
         self.eps_su = eps_su
 
-    def concrete_stress_strain(self, eps_c: float):
+    def concrete_stress_strain_hognestad(self, eps_c: float):
         """
         Returns the concrete stress-strain curve (parabolic),
         based on Hognestad model:
@@ -34,7 +34,14 @@ class Material:
         # Descending line
         A = eps_c - eps_0
         B = eps_u - eps_0
-        return 0.85 * fc_ * (1 - gamma * (A / B))
+        return fc_ * (1 - gamma * (A / B))
+
+    def concrete_stress_strain(self, eps_c: float):
+        """
+        Returns the concrete stress-strain curve (parabolic) after reducing size effect
+        by 0.85
+        """
+        return 0.85 * self.concrete_stress_strain_hognestad(eps_c)
 
     def concrete_stress_strain_ufunc(self, eps_c: float):
         return np.vectorize(self.concrete_stress_strain, otypes=[float])(eps_c)
