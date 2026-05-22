@@ -44,7 +44,10 @@
         
         /* Tabs Styles */
         .tabs-container { width: 100%; max-width: 1000px; margin-bottom: 20px; }
-        .tabs-nav { display: flex; border-bottom: 1px solid #ddd; margin-bottom: 20px; gap: 5px; }
+        .tabs-nav { display: flex; align-items: flex-end; justify-content: space-between; border-bottom: 1px solid #ddd; margin-bottom: 20px; }
+        .tabs-nav-left { display: flex; gap: 5px; }
+        .quit-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; margin-bottom: 4px; background: #dc3545; color: #fff; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 600; }
+        .quit-btn:hover { background: #b02a37; }
         .tab-btn { padding: 8px 16px; cursor: pointer; border: 1px solid transparent; border-bottom: none; background: #eee; font-size: 14px; font-weight: bold; color: #666; border-radius: 4px 4px 0 0; transition: none; margin-bottom: -1px; box-shadow: none; }
         .tab-btn:hover { background: #eee !important; color: #666 !important; }
         .tab-btn.active { background: #fff !important; color: #333 !important; border-color: #ddd; border-bottom-color: #fff; box-shadow: none; }
@@ -61,8 +64,13 @@
         <h1 style="text-align: center; font-size: 24px; margin-bottom: 30px; color: #333;">Column Biaxial Analysis</h1>
 
         <div class="tabs-nav">
-            <button class="tab-btn active" onclick="openTab(event, 'analysis-tab')">Analysis</button>
-            <button class="tab-btn" onclick="openTab(event, 'about-tab')">About</button>
+            <div class="tabs-nav-left">
+                <button class="tab-btn active" onclick="openTab(event, 'analysis-tab')">Analysis</button>
+                <button class="tab-btn" onclick="openTab(event, 'about-tab')">About</button>
+            </div>
+            {% if is_bundled %}
+            <a href="/quit" class="quit-btn" onclick="return confirm('Stop Saka Beton?')">&#9632; Stop</a>
+            {% endif %}
         </div>
 
         <div id="analysis-tab" class="tab-content active">

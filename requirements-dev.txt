@@ -1,1 +1,2 @@
 pytest==9.*
+pyinstaller>=6.0
