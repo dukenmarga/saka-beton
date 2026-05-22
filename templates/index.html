@@ -37,9 +37,10 @@
         button:hover { background-color: #0056b3; }
         
         #result-container { margin-top: 30px; width: 100%; }
-        .htmx-indicator { display: none; margin-left: 15px; color: #666; font-weight: bold; }
+        .htmx-indicator { display: none; font-weight: normal; opacity: 0.85; }
         .htmx-request.htmx-indicator { display: inline; }
         .htmx-request .htmx-indicator { display: inline; }
+        .htmx-request .btn-label { display: none; }
         
         /* Tabs Styles */
         .tabs-container { width: 100%; max-width: 1000px; margin-bottom: 20px; }
@@ -253,9 +254,10 @@
                                 hx-include="#analysis-form"
                                 hx-target="#result-container"
                                 hx-swap="innerHTML"
-                                hx-on::before-request="this.innerText='Processing Analysis...'; this.disabled=true;"
-                                hx-on::after-request="this.innerText='Run Analysis'; this.disabled=false;">
-                            Run Analysis
+                                hx-on::before-request="this.disabled=true;"
+                                hx-on::after-request="this.disabled=false;">
+                            <span class="btn-label">Run Analysis</span>
+                            <span class="htmx-indicator">Processing...</span>
                         </button>
                     </div>
                 </div>
@@ -278,9 +280,9 @@
             <h3 style="color: #333;">License & Copyright</h3>
             <div class="license-text">{{ license_content }}</div>
         </div>
+
+        <div id="result-container"></div>
     </div>
-    
-    <div id="result-container"></div>
 
     <script>
         function openTab(evt, tabName) {
