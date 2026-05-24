@@ -48,10 +48,8 @@ class Material:
 
     def steel_rebar_stress_strain(self, eps_s: float):
         """
-        Calculate stress-strain curve for steel rebar
-        Developed from paper:
-        Stress-strain model for grade 275 reinforcing steel with cyclic loading
-        K. J. Thompson and R. Park (1978)
+        Calculate stress-strain curve for steel rebar:
+        Elastic-perfectly plastic stress-strain curve
         """
         Es = self.Es
         fy = self.fy
