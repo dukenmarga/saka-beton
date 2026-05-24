@@ -396,9 +396,9 @@ class ConcreteInteractionDiagram:
         rebar['strain'] = rebar_strain_local
 
         # Calculate area of each rebar
-        rebar_area_Ab = geometry.calculate_rebar_area(rebar[['diameter']])
+        rebar_area_As = geometry.calculate_rebar_area(rebar[['diameter']])
         # Concat rebar area
-        rebar['Ab'] = rebar_area_Ab
+        rebar['As'] = rebar_area_As
 
         # Get compression part from the concrete if all the section is crossed by
         # the neutral axis
@@ -425,8 +425,8 @@ class ConcreteInteractionDiagram:
         ##########
 
         # Calculate rebar stress based on strain and area
-        rebar_fsi = self.material.steel_rebar_stress_strain_ufunc(rebar[['strain']])
-        rebar['fsi'] = rebar_fsi
+        rebar_fs = self.material.steel_rebar_stress_strain_ufunc(rebar[['strain']])
+        rebar['fs'] = rebar_fs
 
         # Calculate concrete stress at reinforcement rebar (to correct hole made by rebar)
         rebar_fci = self.material.concrete_stress_strain_ufunc(rebar[['strain']])
@@ -436,52 +436,52 @@ class ConcreteInteractionDiagram:
         # FORCE #
         #########
 
-        # Rebar force: Fsi = Ab * fsi
-        # Abi * fsi (mm2 * MPa / 1000 -> KN)
-        rebar_Ab_fsi = rebar[['fsi']].values * rebar[['Ab']].values / 1000
-        rebar['Ab_fsi'] = rebar_Ab_fsi
+        # Rebar force: Fs = As * fs
+        # As * fs (mm2 * MPa / 1000 -> KN)
+        rebar_As_fs = rebar[['fs']].values * rebar[['As']].values / 1000
+        rebar['As_fs'] = rebar_As_fs
 
         # Concrete force at rebar position (to correct hole made by rebar)
-        # Fci = Ab * fci
-        # Abi * fci (mm2 * MPa / 1000 -> KN)
-        rebar_Ab_fci = rebar[['fci']].values * rebar[['Ab']].values / 1000
-        rebar['Ab_fci'] = rebar_Ab_fci
+        # Fci = As * fci
+        # As * fci (mm2 * MPa / 1000 -> KN)
+        rebar_As_fci = rebar[['fci']].values * rebar[['As']].values / 1000
+        rebar['As_fci'] = rebar_As_fci
 
         #############
         # SUMMATION #
         #############
 
         # Total nominal concrete capacity
-        # Ab * fci -> KN
-        sum_Ab_fci = np.sum(rebar[['Ab_fci']])
+        # As * fci -> KN
+        sum_As_fci = np.sum(rebar[['As_fci']])
 
         # Total nominal concrete moment capacity about global X-axis
-        # Ab * fci * Ybi -> KN * mm / 1e6 = KN.m
-        sum_Ab_fci_Ybi = np.sum(rebar[['Ab_fci']].values * rebar[['y']].values / 1e3)
+        # As * fci * Ysi -> KN * mm / 1e6 = KN.m
+        sum_As_fci_Ysi = np.sum(rebar[['As_fci']].values * rebar[['y']].values / 1e3)
 
         # Total nominal concrete moment capacity about global Y-axis
-        # Ab * fci * Xbi -> KN * mm / 1e6 = KN.m
-        sum_Ab_fci_Xbi = np.sum(rebar[['Ab_fci']].values * rebar[['x']].values / 1e3)
+        # As * fci * Xsi -> KN * mm / 1e6 = KN.m
+        sum_As_fci_Xsi = np.sum(rebar[['As_fci']].values * rebar[['x']].values / 1e3)
 
         # Total nominal rebar capacity
-        # Ab * fsi -> KN
-        sum_Ab_fsi = np.sum(rebar[['Ab_fsi']])
+        # As * fs -> KN
+        sum_As_fs = np.sum(rebar[['As_fs']])
 
         # Total nominal rebar moment capacity about global X-axis 
-        # Ab * fsi * Ybi -> KN * mm / 1e6 = KN.m
-        sum_Ab_fsi_Ybi = np.sum(rebar[['Ab_fsi']].values * rebar[['y']].values / 1e3)
+        # As * fs * Ysi -> KN * mm / 1e6 = KN.m
+        sum_As_fs_Ysi = np.sum(rebar[['As_fs']].values * rebar[['y']].values / 1e3)
 
         # Total nominal rebar moment capacity about global Y-axis
-        # Ab * fsi * Xbi -> KN * mm / 1e6 = KN.m
-        sum_Ab_fsi_Xbi = np.sum(rebar[['Ab_fsi']].values * rebar[['x']].values / 1e3)
+        # As * fs * Xsi -> KN * mm / 1e6 = KN.m
+        sum_As_fs_Xsi = np.sum(rebar[['As_fs']].values * rebar[['x']].values / 1e3)
 
         # Total nominal capacity
         # Pn: Nominal axial capacity
-        Pn = Pcn + sum_Ab_fsi - sum_Ab_fci
+        Pn = Pcn + sum_As_fs - sum_As_fci
         # Mnx: Nominal moment capacity about global X-axis
-        MnX = Mcnx + sum_Ab_fsi_Ybi - sum_Ab_fci_Ybi
+        MnX = Mcnx + sum_As_fs_Ysi - sum_As_fci_Ysi
         # Mny: Nominal moment capacity about global Y-axis
-        MnY = Mcny + sum_Ab_fsi_Xbi - sum_Ab_fci_Xbi
+        MnY = Mcny + sum_As_fs_Xsi - sum_As_fci_Xsi
 
         # Get strain of the most tensile rebar
         eps_t = -min(rebar[['strain']].values)[0]
