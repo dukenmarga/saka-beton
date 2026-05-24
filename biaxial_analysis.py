@@ -252,11 +252,15 @@ class ConcreteInteractionDiagram:
             first_point = self.concrete_boundary.loc[[0]]
             self._concrete_boundary = pd.concat([self.concrete_boundary, first_point], axis=0, ignore_index=True)
 
-    def construct_neutral_axis(self, point_on_na: tuple[float], alpha: float) -> LineString:
+    def construct_line(self, point_on_line: tuple[float], alpha: float) -> LineString:
+        """
+        Construct a line that passes through point_on_line and is rotated by alpha.
+        It can be used as virtual axis or neutral axis.
+        """
         # Localising
         concrete_boundary = self.concrete_boundary
         # Extract x,y
-        x_na, y_na = point_on_na
+        x_na, y_na = point_on_line
         xmin = concrete_boundary['x'].min()
         xmax = concrete_boundary['x'].max()
 
@@ -273,9 +277,10 @@ class ConcreteInteractionDiagram:
         # The intent is to get the line that covers the whole concrete boundary on both axis
         delta_x = 10*(x[1] - x[0])
         delta_y = 10*(y[1] - y[0])
-        # Create a Neutral axis that rotates to alpha that passes through the point_on_na
-        na_line = LineString([(x[0] - delta_x, y[0] - delta_y), (x[1] + delta_x, y[1] + delta_y)])
-        return na_line
+
+        # Build a line that rotates to alpha that passes through the point_on_na
+        line = LineString([(x[0] - delta_x, y[0] - delta_y), (x[1] + delta_x, y[1] + delta_y)])
+        return line
 
     def find_lowest_left_node(self):
         """
@@ -303,11 +308,11 @@ class ConcreteInteractionDiagram:
         calculate the phi Mn and phi Pn as well.
         Find combination of Mx and My that gives Pn close to P and alpha
         """
-        # Construct neutral axis that passes through point (0, 0)
-        na = self.construct_neutral_axis(point_on_na=(0, 0), alpha=alpha)
+        # Construct virtual line that passes through point (0, 0)
+        va = self.construct_line(point_on_line=(0, 0), alpha=alpha)
 
-        # Get maximum depth from neutral axis to the farthest point of compression and tension
-        _, yec, _, _, _, yet, _, _ = self.calculate_depth(na)
+        # Get maximum depth from virtual axis to the farthest point of compression and tension
+        _, yec, _, _, _, yet, _, _ = self.calculate_depth(va)
 
         # h_min and h_max are limit where we will iterate to find Mnx and Mny.
         # h is measure from top of compression zone.
@@ -350,7 +355,7 @@ class ConcreteInteractionDiagram:
         YO = self.YO
 
         # Construct benchmark line from a (0,0) that rotates to alpha
-        helper_line = self.construct_neutral_axis(point_on_na=(XO, YO), alpha=alpha)
+        helper_line = self.construct_line(point_on_line=(XO, YO), alpha=alpha)
 
         # Calculate:
         # xec: x coordinate of the most compressed point (local axis)
@@ -369,7 +374,7 @@ class ConcreteInteractionDiagram:
         na_point = geometry.map_to_global(na_point, XO, YO, XO, YO, helper_line)
 
         # Construct neutral axis (away h units from xe, ye)
-        na_line = self.construct_neutral_axis(point_on_na=(na_point[0][0], na_point[0][1]), alpha=alpha)
+        na_line = self.construct_line(point_on_line=(na_point[0][0], na_point[0][1]), alpha=alpha)
 
         # Isolate concrete boundary and rebar locally to this function only
         # - Readability
