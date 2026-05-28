@@ -569,13 +569,23 @@ class ConcreteInteractionDiagram:
         Mny_string = element[2]
 
         for k, result in enumerate(results.capacity):
+            max_theta = np.max(result["theta"])
             for i, r in enumerate(result["theta"]):
                 j = (i + 1) % len(result["theta"])
 
+                # Check neighboring thetas to see if theta_target is in between
                 bigger = result["theta"][i]
                 smaller = result["theta"][j]
-
                 in_between = smaller <= theta_target < bigger
+
+                # Special case: if the last theta is less than 360,
+                # but the theta_target is greater than the last theta
+                # Example: theta = [10.2, 19.8, ..., 359.8] and
+                # theta_target = 360
+                # We will consider theta_target is in between 359.8 and 10.2
+                if theta_target >= max_theta and max_theta != 0:
+                    in_between = True
+
                 if in_between:
                     # Create a virtual line between origin O to theta.
                     # We choose x = 5_000, as hard limit as physically it is
@@ -589,7 +599,7 @@ class ConcreteInteractionDiagram:
                     # Special cases if theta is 0, 90, 180, 270.
                     # At this degree, tan is undefined, hence we need to
                     # handle this situation and set a large value.
-                    if theta_target == 0:
+                    if theta_target == 0 or theta_target == 360:
                         x_inf = 5_000
                         y_inf = 0
                     elif theta_target == 180:
@@ -601,7 +611,7 @@ class ConcreteInteractionDiagram:
                     elif theta_target == 270:
                         x_inf = 0
                         y_inf = -5_000
-                    if theta_target in [0, 90, 180, 270]:
+                    if theta_target in [0, 90, 180, 270, 360]:
                         result[Mnx_string][i] = 0 if abs(result[Mnx_string][i]) < 0.000001 else result[Mnx_string][i]
                         result[Mny_string][i] = 0 if abs(result[Mny_string][i]) < 0.000001 else result[Mny_string][i]
                         result[Mnx_string][j] = 0 if abs(result[Mnx_string][j]) < 0.000001 else result[Mnx_string][j]
