@@ -588,29 +588,33 @@ class ConcreteInteractionDiagram:
 
                 if in_between:
                     # Create a virtual line between origin O to theta.
-                    # We choose x = 5_000, as hard limit as physically it is
-                    # rare to have concrete section larger than 5_000 mm
+                    # We choose x = 6_000, as hard limit as physically it is
+                    # rare to have concrete section larger than 6_000 mm.
+                    # We set it differently from 5_000 in _secant_method(),
+                    # since failure_line might be larger a bit than 5_000 mm.
+                    # So, 6_000 is selected since it is large enough to create
+                    # intersection between failure_line and theta_line.
                     if 0 < theta_target < 90 or 180 < theta_target < 270:
-                        x_inf = 5_000
+                        x_inf = 6_000
                     else:
-                        x_inf = -5_000
+                        x_inf = -6_000
                     y_inf = math.tan(theta_target / 180 * math.pi) * x_inf
 
                     # Special cases if theta is 0, 90, 180, 270.
                     # At this degree, tan is undefined, hence we need to
                     # handle this situation and set a large value.
                     if theta_target == 0 or theta_target == 360:
-                        x_inf = 5_000
+                        x_inf = 6_000
                         y_inf = 0
                     elif theta_target == 180:
-                        x_inf = -5_000
+                        x_inf = -6_000
                         y_inf = 0
                     elif theta_target == 90:
                         x_inf = 0
-                        y_inf = 5_000
+                        y_inf = 6_000
                     elif theta_target == 270:
                         x_inf = 0
-                        y_inf = -5_000
+                        y_inf = -6_000
                     if theta_target in [0, 90, 180, 270, 360]:
                         result[Mnx_string][i] = 0 if abs(result[Mnx_string][i]) < 0.000001 else result[Mnx_string][i]
                         result[Mny_string][i] = 0 if abs(result[Mny_string][i]) < 0.000001 else result[Mny_string][i]
