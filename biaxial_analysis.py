@@ -54,6 +54,28 @@ class ConcreteInteractionDiagram:
         # Define ultimate loads
         self.loads = loads
 
+    def check_clear_concrete_cover(self):
+        # Group concrete boundary into edges
+        concrete_edges: list[LineString] = []
+        for i, p1 in enumerate(self.concrete_boundary[['x', 'y']].values):
+            j = (i + 1) % len(self._concrete_boundary)
+            p2 = self.concrete_boundary.iloc[j].values
+            edge = LineString([(p1[0], p1[1]), (p2[0], p2[1])])
+            concrete_edges.append(edge)
+
+        # Check if any rebar is too close to concrete boundary
+        for rebar in self._rebar.itertuples():
+            p = Point(rebar.x, rebar.y)
+            for edge in concrete_edges:
+                # Calculate clear concrete cover from concrete boundary and outer side of rebar
+                clear_cover = shapely.distance(edge, p)
+                if (clear_cover - rebar.diameter / 2) < 20:
+                    import sys
+                    print("""WARNING: One or more rebar is too close to concrete boundary (clear cover less than 20mm).
+                          The solution might not converge.""",
+                        file=sys.stderr, flush=True)
+                    return
+
     def preanalysis(self):
         """
         Preanalysis to find the geometric centroid of the concrete boundary and transform the coordinates relative to the centroid
