@@ -630,7 +630,10 @@ class ConcreteInteractionDiagram:
                     intersection = failure_line.intersection(theta_line)
 
                     # extract Mx and My
-                    Mx, My = intersection.x, intersection.y
+                    try:
+                        Mx, My = intersection.x, intersection.y
+                    except Exception:
+                        raise Exception(f"No intersection found: {failure_line} and {theta_line}")
 
                     # Calculate vector moment from Mx and My
                     M = math.sqrt(Mx**2 + My**2)
