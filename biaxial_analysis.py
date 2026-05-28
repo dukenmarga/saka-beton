@@ -559,7 +559,7 @@ class ConcreteInteractionDiagram:
             h1, Pn1 = h2, Pn2
             h2 = h3
 
-        return 0, 0, 0, 0
+        raise ValueError(f"Secant method did not converge at P: {Pn_target} KN and alpha: {alpha}. Please check the input parameters.")
 
     def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
         Mn = []
