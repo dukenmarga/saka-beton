@@ -86,9 +86,9 @@ class SNI_2847_2019:
             phiPn = phiPn_max
         return phiPn
 
-    def compute_phiPn_max(
+    def compute_Pn_max(
         self,
-        phiPn: float = 0,
+        Po: float = 0,
     ) -> float:
         """Compute pure compression axial capacity of column,
         but reduced to anticipate accidental eccentricity, KN.
@@ -103,6 +103,6 @@ class SNI_2847_2019:
         else:
             K = 0.0
 
-        phiPn = K * phiPn
+        Pn_max = K * Po
 
-        return phiPn
+        return Pn_max

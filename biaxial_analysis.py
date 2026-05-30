@@ -443,9 +443,9 @@ class ConcreteInteractionDiagram:
         # Calculate Pn, Mnx, Mny for each compression part 
         for compression_parts in compression_parts:
             Pcn_part, Mcnx_part, Mcny_part = self.Pcn_Mcnx_Mcny(compression_parts, XO, YO)
-            Pcn +=  beta * Pcn_part
-            Mcnx +=  beta * Mcnx_part
-            Mcny +=  beta * Mcny_part
+            Pcn += Pcn_part
+            Mcnx += beta * Mcnx_part
+            Mcny += beta * Mcny_part
 
         ##########
         # STRESS #
@@ -504,14 +504,16 @@ class ConcreteInteractionDiagram:
 
         # Total nominal capacity
         # Pn: Nominal axial capacity
-        Pn = Pcn + sum_As_fs - sum_As_fci
+        # (to be consistent with formula from SNI/ACI subsection 22.4.2.2)
+        # 0.85 is fc' reduction due to size effect based on Hognestad research
+        Pn = 0.85*(Pcn - sum_As_fci) + sum_As_fs
         # Mnx: Nominal moment capacity about global X-axis
-        MnX = Mcnx + sum_As_fs_Ysi - sum_As_fci_Ysi
+        MnX = 0.85*(Mcnx - sum_As_fci_Ysi) + sum_As_fs_Ysi
         # Mny: Nominal moment capacity about global Y-axis
-        MnY = Mcny + sum_As_fs_Xsi - sum_As_fci_Xsi
+        MnY = 0.85*(Mcny - sum_As_fci_Xsi) + sum_As_fs_Xsi
 
         # Get strain of the most tensile rebar
-        eps_t = -min(rebar[['strain']].values)[0]
+        eps_t = abs(min(rebar[['strain']].values)[0])
 
         # Return nominal capacity based on selected alpha and h
         return Pn, MnX, MnY, eps_t
@@ -744,17 +746,16 @@ class ConcreteInteractionDiagram:
             theta += 360
         return theta
 
-    def Pc_max(self):
+    def Po(self):
         """
-        Nominal compressive strength
+        Nominal compressive strength, without reduction to consider accidental eccentricity
         """
         fc_ = self.material.fc_
         fy = self.material.fy
         concrete_area = geometry.calculate_concrete_area(self.concrete_boundary[['x', 'y']].values)
         rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].values))
-        # TODO: Whitney coefficient is determined from the fc'
-        beta = 0.85
-        return (beta * 0.85 * fc_ * (concrete_area-rebar_area) + fy * rebar_area) / 1e3
+
+        return (0.85*fc_*(concrete_area-rebar_area) + fy*rebar_area) / 1e3
 
     def Pcn_Mcnx_Mcny(self, concrete_compression_boundary_xy: np.ndarray, XO: float, YO: float):
         """
@@ -779,10 +780,9 @@ class ConcreteInteractionDiagram:
         y_depth = y_centroid_compress - YO
 
         # Calculate Pn, Mnx, Mny
-        # 0.85 is reduction due to size effect based on Hognestad research
-        Pn = 0.85 * compression_area * self.material.fc_ / 1e3
-        Mnx = 0.85 * compression_area * self.material.fc_ * y_depth / 1e6
-        Mny = 0.85 * compression_area * self.material.fc_ * x_depth / 1e6
+        Pn = compression_area * self.material.fc_ / 1e3
+        Mnx = compression_area * self.material.fc_ * y_depth / 1e6
+        Mny = compression_area * self.material.fc_ * x_depth / 1e6
 
         return Pn, Mnx, Mny
 
@@ -822,9 +822,10 @@ class ConcreteInteractionDiagram:
 
         # Supress scientific notation
         np.set_printoptions(suppress=True)
-        Pn_max = self.Pc_max()
+        Po = self.Po()
         Pn_min = self.Pt_max()
 
+        # ZONE 1: FULL TENSION
         # Add result for full tension.
         # At this level, Mnx = Mny = 0, Pn = Pn_min
         zeros = [0] * len(alphas)
@@ -850,12 +851,20 @@ class ConcreteInteractionDiagram:
             'theta': zeros,
         }]
 
+        # ZONE 2: BETWEEN FULL TENSION AND FULL COMPRESSION (COMBINATION OF MOMENT-AXIAL)
         # Add result between full tension and full compression.
 
         # Set Pn for extension zone (Pn < 0)
         Pns_target = [P for P in range(int(Pn_min*0.6), 0, abs(int(Pn_min/3)))]
         # Set Pn for compression zone (Pn >= 0)
-        Pns_target = Pns_target + [P for P in range(0, int(Pn_max*0.85), int(Pn_max/15))]
+        Pns_target = Pns_target + [P for P in range(0, int(Po*0.85), int(Po/15))]
+
+        # Before calculating the solution in this zone, we need to determine
+        # the maximum allowable axial capacity.
+        phi_c = sni.compute_phi(reduction_type="compression", eps_t=0, eps_y=self.material.fy / self.material.Es)
+        phiPo = phi_c * Po
+        Pn_max = sni.compute_Pn_max(Po)
+        phiPn_max = phi_c * Pn_max
 
         for _, Pn_target in enumerate(Pns_target):
             Pn0 = []
@@ -863,7 +872,6 @@ class ConcreteInteractionDiagram:
             Mny0 = []
             theta0 = []
             phi0 = []
-            # eps_t0 = []
 
             with multiprocessing.Pool(processes=16) as pool:
                 # Map the function to the inputs and get results in order
@@ -873,15 +881,13 @@ class ConcreteInteractionDiagram:
                     Mny0.append(Mny)
                     theta0.append(theta)
                     phi0.append(phi)
+
             nc.capacity.append({
                 "Pn": Pn0,
                 "Mnx": Mnx0,
                 "Mny": Mny0,
                 "theta": theta0,
             })
-
-            phix = sni.compute_phi(reduction_type="compression", eps_t=0, eps_y=self.material.fy / self.material.Es)
-            phiPn_max = sni.compute_phiPn_max(phix * Pn_max)
             rc.capacity.append({
                 "Pn": [sni.compute_phiPn(phi, Pn, phiPn_max) for phi, Pn in zip(phi0, Pn0)],
                 "Mnx": [phi * Mnx for phi, Mnx in zip(phi0,  Mnx0)],
@@ -889,14 +895,16 @@ class ConcreteInteractionDiagram:
                 "theta": theta0,
             })
 
+        # ZONE 3: FULL COMPRESSION
         # Add result for full compression
         # At this level, Mnx = Mny = 0, Pn = Pn_max
-        Pnc = [Pn_max] * len(alphas)
+        Pnc = [Po] * len(alphas)
 
         eps_t = [0] * len(alphas)
         eps_y = [self.material.fy / self.material.Es] * len(alphas)
         state = ["compression"] * len(alphas)
-        phis = sni.compute_phi_vector(reduction_type=state, eps_t=eps_t, eps_y=eps_y)
+        # phis = sni.compute_phi_vector(reduction_type=state, eps_t=eps_t, eps_y=eps_y)
+        phis = [phi_c] * len(alphas)
 
         nc.capacity.append({
             "Pn": Pnc,
@@ -904,8 +912,6 @@ class ConcreteInteractionDiagram:
             "Mny": zeros,
             "theta": zeros,
         })
-        phix = sni.compute_phi(reduction_type="compression", eps_t=0, eps_y=self.material.fy / self.material.Es)
-        phiPn_max = sni.compute_phiPn_max(phix * Pn_max)
         rc.capacity.append({
             "Pn": [sni.compute_phiPn(phi, Pn, phiPn_max) for phi, Pn in zip(phis, Pnc)],
             "Mnx": zeros,
