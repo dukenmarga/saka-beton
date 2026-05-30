@@ -899,11 +899,6 @@ class ConcreteInteractionDiagram:
         # Add result for full compression
         # At this level, Mnx = Mny = 0, Pn = Pn_max
         Pnc = [Po] * len(alphas)
-
-        eps_t = [0] * len(alphas)
-        eps_y = [self.material.fy / self.material.Es] * len(alphas)
-        state = ["compression"] * len(alphas)
-        # phis = sni.compute_phi_vector(reduction_type=state, eps_t=eps_t, eps_y=eps_y)
         phis = [phi_c] * len(alphas)
 
         nc.capacity.append({
