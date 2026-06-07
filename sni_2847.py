@@ -109,7 +109,7 @@ class SNI_2847_2019:
         # See Table 22.4.21 ACI 318_14
         if self.transverse == "ties":
             K = 0.8
-        elif self.transverse in ["spiral", "other"]:
+        elif self.transverse == "spiral":
             K = 0.85
         else:
             K = 0.0
