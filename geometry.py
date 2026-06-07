@@ -83,7 +83,7 @@ def calculate_concrete_area(concrete_boundary: np.ndarray):
     return area
 
 
-def get_compression_part(polygon: Polygon, line: LineString, XeYe: tuple[float, float]):
+def get_compressed_parts(polygon: Polygon, line: LineString, XeYe: tuple[float, float]):
     """
     Get the compression part of the polygon by the line.
     XeYe is an indicator node that is on compression part.
