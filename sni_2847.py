@@ -5,6 +5,17 @@ class SNI_2847_2019:
     def __init__(self, transverse: Literal["ties", "spiral"] = "ties"):
         self.transverse = transverse
 
+    def compute_beta1(self, fc: float = 0) -> float:
+        """Set beta1, Factor relating depth of equivalent rectangular compressive stress block to depth of neutral axis"""
+        if fc < 17:
+            return 0.001
+        elif 17 <= fc <= 28:
+            return 0.85
+        elif 28 < fc < 55:
+            return 0.85 - (fc - 28) * 0.05 / 7
+        else:
+            return 0.65
+
     def compute_phi(
         self,
         reduction_type: Literal[
