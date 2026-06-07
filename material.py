@@ -53,19 +53,16 @@ class Material:
         Es = self.Es
         fy = self.fy
 
-        sign = 1
-        eps_y = fy / Es
-        if eps_s < 0:
-            sign = -1
-            eps_s = -eps_s
-
         # Region 1 (Elastic)
-        # fs = Es * eps_s
-        if eps_s <= eps_y:
-            return Es * eps_s * sign
+        fs = eps_s * Es
+
         # Region 2 (Plateau)
-        # fs = fy
-        return fy * sign
+        if fs < -fy:
+            fs = -fy
+        if fs > fy:
+            fs = fy
+
+        return fs
 
     def steel_rebar_stress_strain_with_strain_hardening(self, eps_s: float):
         """
