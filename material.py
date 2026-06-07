@@ -38,10 +38,9 @@ class Material:
 
     def concrete_stress_strain(self, eps_c: float):
         """
-        Returns the concrete stress-strain curve (parabolic) after reducing size effect
-        by 0.85
+        Returns the concrete stress-strain curve (parabolic)
         """
-        return 0.85 * self.concrete_stress_strain_hognestad(eps_c)
+        return self.concrete_stress_strain_hognestad(eps_c)
 
     def concrete_stress_strain_ufunc(self, eps_c: float):
         return np.vectorize(self.concrete_stress_strain, otypes=[float])(eps_c)
