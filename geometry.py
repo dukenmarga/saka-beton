@@ -138,7 +138,7 @@ def get_compressed_parts(polygon: Polygon, line: LineString, XeYe: tuple[float, 
     # Get the coordinates of compression part
     # The format: x is the first row, y is the second row
     compression_parts = []
-    for _, i in enumerate(compression_index):
+    for i in compression_index:
         compression_part = np.array(parts.geoms[i].exterior.coords.xy)
         # Transpose so x is the first column, y is the second
         compression_part = compression_part.T
