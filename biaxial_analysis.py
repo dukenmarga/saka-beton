@@ -270,6 +270,12 @@ class ConcreteInteractionDiagram:
 
         return rebar_y / c * self.material.epsilon_u
 
+    def calculate_strain_full_compression(self):
+        """
+        Calculate strain in full compression.
+        """
+        return self.material.epsilon_u
+
     def close_boundary_loop(self):
         """
         Check if the boundary is closed.
@@ -351,10 +357,9 @@ class ConcreteInteractionDiagram:
         # Hence we offset 1mm from top and bottom   
         c_min =  1
         c_max = h_max - 1
-        # Case when checking compression, we increase the c_max.
+        # Case when checking near full compression, we increase the c_max.
         # This means the neutral axis will be further away from the compression zone.
-        # TODO: To get more efficient process (reduce the number of iteration), compare it with 0.9*Po
-        if P > 0:
+        if P > 0.9*self.Po():
             c_max = h_max * 3
 
         Pn, Mnx, Mny, eps_t = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
@@ -376,7 +381,7 @@ class ConcreteInteractionDiagram:
         Pn = self.compute_Pn(c, alpha)
         return Pn - Pn_target
 
-    def compute_Pn(self, c: float = 10,alpha: float = 0):
+    def compute_Pn(self, c: float = 10, alpha: float = 0):
         """
         Calculate Pn from alpha and h
             alpha is in degrees
@@ -428,8 +433,12 @@ class ConcreteInteractionDiagram:
         rebar_local_pd = pd.DataFrame(rebar_local, columns=['x', 'y'])
 
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
-        # We use c, since it is the location of the neutral axis
-        rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
+        # We use c, since it is the location of the neutral axis.
+        # For full compression, we return the ultimate concrete strain
+        if self.Pn_target == self.Po():
+            rebar_strain_local = self.calculate_strain_full_compression()
+        else:
+            rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
         # Concat strain (relative to Neutral Axis line)
         rebar['strain'] = rebar_strain_local
 
@@ -511,7 +520,7 @@ class ConcreteInteractionDiagram:
         # In rectangle, this area is equal to Area = c * beta1 * bw
         h_beta1 = c * self.beta1
         compressed_parts_uniform, _, _ = self.construct_concrete_compression_region(c=h_beta1, alpha=alpha)
-        centroids = self.compute_centroid_from_polygons(compressed_parts_uniform)
+        ecc = self.compute_centroid_from_polygons(compressed_parts_uniform)
 
         # If we are calculating axial-moment capacity, the compression capacity
         # is calculated using beta1 (derived from fc')
@@ -541,8 +550,8 @@ class ConcreteInteractionDiagram:
             Pcn += Pcn_part * beta1 * Kpc
 
             # Extract moment length
-            x_depth = centroids[0]
-            y_depth = centroids[1]
+            x_depth = ecc[0]
+            y_depth = ecc[1]
 
             # Moment capacity is always calculated using beta1
             Mcnx += Pcn_part * self.beta1 * y_depth / 1e3
@@ -559,8 +568,12 @@ class ConcreteInteractionDiagram:
         rebar_local_pd = pd.DataFrame(rebar_local, columns=['x', 'y'])
 
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
-        # We use c, since it is the location of the neutral axis
-        rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
+        # We use c, since it is the location of the neutral axis.
+        # For full compression, we return the ultimate concrete strain
+        if self.Pn_target == self.Po():
+            rebar_strain_local = self.calculate_strain_full_compression()
+        else:
+            rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
         # Concat strain (relative to Neutral Axis line)
         rebar['strain'] = rebar_strain_local
 
@@ -634,10 +647,12 @@ class ConcreteInteractionDiagram:
         # Mny: Nominal moment capacity about global Y-axis
         MnY = (Mcny - sum_As_fci_Xsi) + sum_As_fs_Xsi
 
-        # Get strain of the most tensile rebar
-        eps_t = -(min(rebar[['strain']].values)[0])
+        # Get strain of the most tensile rebar.
+        # Absolute value of strain.
+        eps_t = abs(min(rebar[['strain']].values)[0])
 
-        # Return nominal capacity based on selected alpha and h
+        # Return nominal capacity based on selected alpha and h,
+        # and strain of the most tensile rebar
         return Pn, MnX, MnY, eps_t
 
     def compute_centroid_from_polygons(self, polygons: np.ndarray):
@@ -759,6 +774,7 @@ class ConcreteInteractionDiagram:
         c1 = c_min
         c2 = c_max
         c3 = 0
+        self.Pn_target = Pn_target
         Pn1 = self.compute_Pn(c1, alpha)
 
         max_iter = 20
@@ -958,6 +974,9 @@ class ConcreteInteractionDiagram:
         Mns = []
         Pns = []
         for i, theta in enumerate(thetas):
+            # Normalize theta
+            theta = self.normalize_theta(theta)
+
             # Mn & Pn is a list of points that forms the failure surface at theta
             Mn, Pn = self.interpolate_PM(theta, results)
             Mns.append(Mn)
@@ -1044,39 +1063,13 @@ class ConcreteInteractionDiagram:
         Po = self.Po()
         Pn_min = self.Pt_max()
 
-        # ZONE 1: FULL TENSION
-        # Add result for full tension.
-        # At this level, Mnx = Mny = 0, Pn = Pn_min
-        zeros = [0] * len(alphas)
-        Pnt = [Pn_min] * len(alphas)
-
-        state = ['tension'] * len(alphas)
-        phis = sni.compute_phi_vector(reduction_type=state)
-
         # Nominal capacity and reduced capacity
         nc = Capacity(False, [])
         rc = Capacity(True, [])
 
-        nc.capacity = [{
-            'Pn': Pnt,
-            'Mnx': zeros,
-            'Mny': zeros,
-            'theta': zeros,
-        }]
-        rc.capacity = [{
-            'Pn': phis * Pnt,
-            'Mnx': zeros,
-            'Mny': zeros,
-            'theta': zeros,
-        }]
-
-        # ZONE 2: BETWEEN FULL TENSION AND FULL COMPRESSION (COMBINATION OF MOMENT-AXIAL)
-        # Add result between full tension and full compression.
-
-        # Set Pn for extension zone (Pn < 0)
-        Pns_target = [P for P in range(int(Pn_min*0.6), 0, abs(int(Pn_min/3)))]
-        # Set Pn for compression zone (Pn >= 0)
-        Pns_target = Pns_target + [P for P in range(0, int(Po*0.85), int(Po/15))]
+        # 25 evenly spaced levels from 1 KN above full tension to Po full compression.
+        number = 25
+        Pns_target = list(np.linspace(Pn_min + 1, Po, number))
 
         # Before calculating the solution in this zone, we need to determine
         # the maximum allowable axial capacity.
@@ -1113,25 +1106,6 @@ class ConcreteInteractionDiagram:
                 "Mny": [phi * Mny for phi, Mny in zip(phi0, Mny0)],
                 "theta": theta0,
             })
-
-        # ZONE 3: FULL COMPRESSION
-        # Add result for full compression
-        # At this level, Mnx = Mny = 0, Pn = Pn_max
-        Pnc = [Po] * len(alphas)
-        phis = [phi_c] * len(alphas)
-
-        nc.capacity.append({
-            "Pn": Pnc,
-            "Mnx": zeros,
-            "Mny": zeros,
-            "theta": zeros,
-        })
-        rc.capacity.append({
-            "Pn": [sni.compute_phiPn(phi, Pn, phiPn_max) for phi, Pn in zip(phis, Pnc)],
-            "Mnx": zeros,
-            "Mny": zeros,
-            "theta": zeros,
-        })
 
         return nc, rc
 
