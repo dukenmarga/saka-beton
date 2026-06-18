@@ -5,3 +5,4 @@ pandas==3.*
 pygmsh==7.*
 flask==3.*
 scipy==1.*
+meshcut==0.3.0
