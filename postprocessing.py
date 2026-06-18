@@ -156,17 +156,15 @@ class Plot:
             opacity = 1
         for i, (Mn, Pn, theta) in enumerate(zip(Mns, Pns, thetas)):
             # Plot nominal capacity
-            ax.plot(Mns[i], Pns[i], c=colors[i], linestyle=linestyle, alpha=opacity)
-
-            # Collect legend
-            legends.append(f'{theta:.1f}°')
+            prefix = 'ϕ' if reduced else ''
+            ax.plot(Mn, Pn, c=colors[i], linestyle=linestyle, alpha=opacity, label=f'{prefix}{theta:.1f}°')
 
             # Find the max value of Mn and Pn
             x_max = max(x_max, max(Mn))
             y_max = max(y_max, max(Pn))
             y_min = min(y_min, min(Pn))
 
-        leg = ax.legend(legends, loc='upper right')
+        leg = ax.legend(loc='upper right')
         leg.set_draggable(True)
         ax.set_xlim(0, x_max*1.1)
         ax.set_ylim(y_min, y_max)
