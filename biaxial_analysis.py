@@ -16,6 +16,7 @@ import geometry
 from postprocessing import Plot
 from material import Material
 from capacity import Capacity
+import meshcut
 
 import faulthandler
 faulthandler.enable()
@@ -832,91 +833,142 @@ class ConcreteInteractionDiagram:
         raise ValueError(f"Secant method did not converge at P: {Pn_target} KN and alpha: {alpha}. Pn2: {Pn2} KN. Please check the input parameters.")
 
     def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
-        Mn = []
-        Pn = []
-        Pn_string = element[0]
+        """
+        Extract the 2D PM interaction curve for a given bending direction (theta_target).
+
+        The 3D interaction surface is a closed "balloon" shape in (Mnx, Mny, Pn) space —
+        every point on its surface represents a combination of axial load Pn and biaxial
+        moments (Mnx, Mny) that exactly reaches column capacity.
+
+        This function cuts that surface with a vertical plane at angle theta_target,
+        producing a single 2D PM curve: Mn (resultant moment) on the horizontal axis
+        and Pn (axial load) on the vertical axis.
+
+        Parameters
+        ----------
+        theta_target : angle of the bending plane in degrees (0° = pure Mnx, 90° = pure Mny)
+        results      : Capacity object from run() — contains all precomputed capacity rings
+        element      : keys to read from results; default ["Pn", "Mnx", "Mny"] for nominal,
+                       or ["Pnr", "Mnxr", "Mnyr"] for reduced (phi-factored) capacity
+
+        Returns
+        -------
+        Mn : list of resultant moment values along the curve [kN·m]
+        Pn : list of corresponding axial load values [kN]
+        """
+        # Unpack the dictionary keys we will read from the capacity data.
+        # Using keys instead of hard-coded names lets this function work for both
+        # nominal (Pn/Mnx/Mny) and reduced (Pnr/Mnxr/Mnyr) capacities.
+        Pn_string  = element[0]
         Mnx_string = element[1]
         Mny_string = element[2]
 
-        for k, result in enumerate(results.capacity):
-            max_theta = np.max(result["theta"])
-            for i, r in enumerate(result["theta"]):
-                j = (i + 1) % len(result["theta"])
+        capacity = results.capacity
+        n_levels = len(capacity)                    # number of axial load levels (P rings)
+        n_alpha  = len(capacity[0][Mnx_string])     # number of moment directions per ring
 
-                # Check neighboring thetas to see if theta_target is in between
-                bigger = result["theta"][i]
-                smaller = result["theta"][j]
-                in_between = smaller <= theta_target < bigger
+        # -----------------------------------------------------------------
+        # STEP 1 — Rebuild the 3D surface as a triangular mesh.
+        #
+        # The capacity data is stored as n_levels rings, each ring being
+        # n_alpha (Mnx, Mny) points at a fixed Pn. We turn that grid into
+        # a proper 3D mesh so we can cut it precisely with a plane.
+        #
+        # verts = list of 3D points (Mnx, Mny, Pn), one per ring×direction pair.
+        # -----------------------------------------------------------------
+        verts_list = []
+        for k in range(n_levels):
+            result   = capacity[k]
+            pn_level = result[Pn_string][0]     # all directions in this ring share the same Pn
+            for i in range(n_alpha):
+                verts_list.append([result[Mnx_string][i], result[Mny_string][i], pn_level])
+        verts = np.array(verts_list, dtype=np.float64)
 
-                # Special case: if the last theta is less than 360,
-                # but the theta_target is greater than the last theta
-                # Example: theta = [10.2, 19.8, ..., 359.8] and
-                # theta_target = 360
-                # We will consider theta_target is in between 359.8 and 10.2
-                if theta_target >= max_theta and max_theta != 0:
-                    in_between = True
+        # faces = list of triangles, each defined by 3 vertex indices.
+        # Adjacent rings and adjacent directions form a rectangular patch
+        # (quad), which we split into 2 triangles. The last direction (i = n_alpha-1)
+        # wraps back to direction 0 so the ring closes without a gap.
+        faces_list = []
+        for k in range(n_levels - 1):
+            for i in range(n_alpha):
+                j   = (i + 1) % n_alpha     # next direction, wrapping around
+                v00 = k * n_alpha + i        # current ring, current direction
+                v01 = k * n_alpha + j        # current ring, next direction
+                v10 = (k + 1) * n_alpha + i  # next ring,    current direction
+                v11 = (k + 1) * n_alpha + j  # next ring,    next direction
+                faces_list.append([v00, v01, v11])  # triangle 1 of the quad
+                faces_list.append([v00, v11, v10])  # triangle 2 of the quad
+        faces = np.array(faces_list, dtype=np.int32)
 
-                if in_between:
-                    # Create a virtual line between origin O to theta.
-                    # We choose x = 6_000, as hard limit as physically it is
-                    # rare to have concrete section larger than 6_000 mm.
-                    # We set it differently from 5_000 in _secant_method(),
-                    # since failure_line might be larger a bit than 5_000 mm.
-                    # So, 6_000 is selected since it is large enough to create
-                    # intersection between failure_line and theta_line.
-                    if 0 < theta_target < 90 or 180 < theta_target < 270:
-                        x_inf = 6_000
-                    else:
-                        x_inf = -6_000
-                    y_inf = math.tan(theta_target / 180 * math.pi) * x_inf
+        # -----------------------------------------------------------------
+        # STEP 2 — Cut the mesh with a vertical plane at angle theta_target.
+        #
+        # The cutting plane passes through the origin and stands upright
+        # (vertical in the Pn direction). It divides the 3D space into the
+        # positive-moment half (Mn > 0) and the negative-moment half (Mn < 0)
+        # for the requested angle.
+        #
+        # A plane in 3D is described by a point it passes through (plane_orig)
+        # and a vector perpendicular to it (plane_norm).
+        # Here: plane_norm = (-sin_t, cos_t, 0), which is horizontal and
+        # perpendicular to the theta direction.
+        # -----------------------------------------------------------------
+        theta_rad  = theta_target / 180 * math.pi
+        cos_t      = math.cos(theta_rad)
+        sin_t      = math.sin(theta_rad)
+        plane_orig = np.array([0.0, 0.0, 0.0])             # plane passes through origin
+        plane_norm = np.array([-sin_t, cos_t, 0.0])        # perpendicular to theta direction
 
-                    # Special cases if theta is 0, 90, 180, 270.
-                    # At this degree, tan is undefined, hence we need to
-                    # handle this situation and set a large value.
-                    if theta_target == 0 or theta_target == 360:
-                        x_inf = 6_000
-                        y_inf = 0
-                    elif theta_target == 180:
-                        x_inf = -6_000
-                        y_inf = 0
-                    elif theta_target == 90:
-                        x_inf = 0
-                        y_inf = 6_000
-                    elif theta_target == 270:
-                        x_inf = 0
-                        y_inf = -6_000
-                    if theta_target in [0, 90, 180, 270, 360]:
-                        result[Mnx_string][i] = 0 if abs(result[Mnx_string][i]) < 0.000001 else result[Mnx_string][i]
-                        result[Mny_string][i] = 0 if abs(result[Mny_string][i]) < 0.000001 else result[Mny_string][i]
-                        result[Mnx_string][j] = 0 if abs(result[Mnx_string][j]) < 0.000001 else result[Mnx_string][j]
-                        result[Mny_string][j] = 0 if abs(result[Mny_string][j]) < 0.000001 else result[Mny_string][j]
+        # meshcut.cross_section finds every edge of the mesh that crosses the plane
+        # and returns the intersection as one or more polylines (contours).
+        cross_sections = meshcut.cross_section(verts, faces, plane_orig, plane_norm)
 
-                    # Build a line from failure surface
-                    x = result[Mnx_string][i], result[Mnx_string][j]
-                    y = result[Mny_string][i], result[Mny_string][j]
-                    failure_line = LineString([(x[0], y[0]), (x[1], y[1])])
+        # Safety fallback: if the cut produced nothing (should not happen for a
+        # well-formed surface), return a zero-moment line spanning full Pn range.
+        fallback_Pn = [capacity[0][Pn_string][0], capacity[-1][Pn_string][0]]
+        if not cross_sections:
+            return [0.0, 0.0], fallback_Pn
 
-                    # Build a line that form theta target
-                    theta_line = LineString([(0, 0), (x_inf, y_inf)])
+        # -----------------------------------------------------------------
+        # STEP 3 — Select the positive-moment arc.
+        #
+        # The cutting plane splits the surface exactly at the moment = 0 boundary,
+        # so meshcut returns TWO separate open arcs: one for the positive-moment
+        # side (the PM curve we want) and one for the negative-moment side.
+        # There may also be tiny fragments near the collapsed top/bottom rings.
+        #
+        # proj = projection of each point onto the theta direction = Mn value.
+        # We pick the arc with the largest positive Mn extent.
+        # -----------------------------------------------------------------
+        pos_contour  = None
+        max_proj_val = 0.0
+        for c in cross_sections:
+            # Project each point of this arc onto the theta direction to get its Mn value.
+            proj_c = c[:, 0] * cos_t + c[:, 1] * sin_t
+            if proj_c.max() > max_proj_val:
+                max_proj_val = proj_c.max()
+                pos_contour  = c   # keep the arc with the furthest positive reach
 
-                    # Get the intersection.
-                    # This intersection is the Mx and My at theta target
-                    intersection = failure_line.intersection(theta_line)
+        if pos_contour is None or max_proj_val <= 0:
+            return [0.0, 0.0], fallback_Pn
 
-                    # extract Mx and My
-                    try:
-                        Mx, My = intersection.x, intersection.y
-                    except Exception:
-                        raise Exception(f"No intersection found: at theta: {theta_target}, {failure_line} and {theta_line}")
+        # Convert the selected arc from 3D (Mnx, Mny, Pn) to 2D (Mn, Pn).
+        # Mn = resultant moment in the theta direction = Mnx*cos_t + Mny*sin_t
+        proj   = pos_contour[:, 0] * cos_t + pos_contour[:, 1] * sin_t   # Mn values
+        Pn_pts = pos_contour[:, 2]                                       # Pn values
 
-                    # Calculate vector moment from Mx and My
-                    M = math.sqrt(Mx**2 + My**2)
-                    Mn.append(M)
-                    Pn.append(result[Pn_string][i])
-                    break
-            else:
-                Mn.append(0)
-                Pn.append(result[Pn_string][i])
+        # -----------------------------------------------------------------
+        # STEP 4 — Close the curve onto the Mn = 0 axis.
+        #
+        # The arc is an open line whose two endpoints lie exactly on the
+        # cutting plane (Mn ≈ 0). Adding Mn = 0 at both ends connects the
+        # curve to the vertical P-axis, completing the standard PM diagram shape.
+        # -----------------------------------------------------------------
+        pn_enter = float(Pn_pts[0])   # Pn at the start of the arc (where Mn = 0)
+        pn_exit  = float(Pn_pts[-1])  # Pn at the end   of the arc (where Mn = 0)
+
+        Mn = [0.0] + list(proj) + [0.0]
+        Pn = [pn_enter] + list(Pn_pts) + [pn_exit]
         return Mn, Pn
 
     def interpolate_PM_at_loads(self, loads: dict, results: list, reduced=False):
