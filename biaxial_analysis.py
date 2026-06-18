@@ -1136,13 +1136,15 @@ class ConcreteInteractionDiagram:
             Mny0 = []
             theta0 = []
             phi0 = []
+            eps_t0 = []
 
             with multiprocessing.Pool(processes=16) as pool:
                 # Map the function to the inputs and get results in order
-                for Pn, Mnx, Mny, theta, phi in pool.starmap(self.find_Mx_My_at_P, [(Pn_target, alpha) for alpha in alphas]):
+                for Pn, Mnx, Mny, eps_t, theta, phi in pool.starmap(self.find_Mx_My_at_P, [(Pn_target, alpha) for alpha in alphas]):
                     Pn0.append(Pn)
                     Mnx0.append(Mnx)
                     Mny0.append(Mny)
+                    eps_t0.append(eps_t)
                     theta0.append(theta)
                     phi0.append(phi)
 
