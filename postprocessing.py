@@ -252,6 +252,46 @@ class Plot:
         leg = ax.legend(legends, loc='upper right')
         leg.set_draggable(True)
 
+    def build_triangulated_mesh_3d(self, c: Capacity):
+        """
+        Render the 3D surface as a proper triangulated mesh using the structured
+        k×alpha grid. Adjacent alphas in the same ring and adjacent rings form
+        quads → 2 triangles each. Avoids Delaunay topology errors from projecting
+        the closed 3D shell onto the Mnx-Mny plane.
+        """
+        capacity = c.capacity
+        n_levels = len(capacity)
+        n_alpha  = len(capacity[0]['Mnx'])
+
+        verts_list = []
+        for k in range(n_levels):
+            result   = capacity[k]
+            pn_level = result['Pn'][0]
+            for i in range(n_alpha):
+                verts_list.append([result['Mnx'][i], result['Mny'][i], pn_level])
+        verts = np.array(verts_list, dtype=np.float64)
+
+        faces_list = []
+        for k in range(n_levels - 1):
+            for i in range(n_alpha):
+                j   = (i + 1) % n_alpha
+                v00 = k * n_alpha + i
+                v01 = k * n_alpha + j
+                v10 = (k + 1) * n_alpha + i
+                v11 = (k + 1) * n_alpha + j
+                faces_list.append([v00, v01, v11])
+                faces_list.append([v00, v11, v10])
+        faces = np.array(faces_list, dtype=np.int32)
+
+        ax = self.ax_3d
+        ax.plot_trisurf(verts[:, 0], verts[:, 1], verts[:, 2],
+                        triangles=faces, cmap='viridis', alpha=0.7, linewidth=0)
+        ax.set_xlabel('Mnx (KN.m)')
+        ax.set_ylabel('Mny (KN.m)')
+        ax.set_zlabel('Pn (KN)')
+        ax.set_title('3D Interaction Surface')
+        ax.set_aspect('equalxy')
+
     def show(self):
         self.ax_section.grid(linewidth=0.5)
         self.ax_3d.grid(linewidth=0.5)
