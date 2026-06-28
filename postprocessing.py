@@ -143,7 +143,8 @@ class Plot:
     def plot_PM_from_thetas(self, Mns: list, Pns: list, thetas: float, reduced=False):
         ax = self.ax_pm_thetas
         legends = []
-        x_max = 0
+        x_min = 0   # tracks the most negative Mn (left side of diagram)
+        x_max = 0   # tracks the most positive Mn (right side of diagram)
         y_max = 0
         y_min = 0
 
@@ -159,20 +160,22 @@ class Plot:
             prefix = 'ϕ' if reduced else ''
             ax.plot(Mn, Pn, c=colors[i], linestyle=linestyle, alpha=opacity, label=f'{prefix}{theta:.1f}°')
 
-            # Find the max value of Mn and Pn
+            # Find the max and min values of Mn and Pn
+            x_min = min(x_min, min(Mn))
             x_max = max(x_max, max(Mn))
             y_max = max(y_max, max(Pn))
             y_min = min(y_min, min(Pn))
 
         leg = ax.legend(loc='upper right')
         leg.set_draggable(True)
-        ax.set_xlim(0, x_max*1.1)
-        ax.set_ylim(y_min, y_max)
+        ax.set_xlim(x_min*1.1, x_max*1.1)  # 10% margin on both sides
+        ax.set_ylim(y_min*1.05, y_max*1.05)
 
     def plot_PM_from_loads(self, Mns: list, Pns: list, loads: dict, thetas: float, reduced=False):
         ax = self.ax_pm_loads
         legends = []
-        x_max = 0
+        x_min = 0   # tracks the most negative Mn
+        x_max = 0   # tracks the most positive Mn
         y_max = 0
         y_min = 0
 
@@ -184,28 +187,29 @@ class Plot:
             linestyle = '-'
             opacity = 1
         for i, (Pu, Mux, Muy, safe) in enumerate(zip(loads["Pu"], loads["Mux"], loads["Muy"], loads["safe"])):
-            # Calculate vector moment
+            # Calculate vector moment (always positive — it is the resultant magnitude)
             Mu = math.sqrt(Mux**2 + Muy**2)
 
             # Plot nominal capacity
             ax.plot(Mns[i], Pns[i], c=colors[i], linestyle=linestyle, alpha=opacity)
 
-            # Plot ultimate load
+            # Plot ultimate load (always on the positive Mn side since Mu is a magnitude)
             marker = 'o' if safe else 'x'
             ax.plot([Mu], [Pu], c=colors[i], marker=marker)
 
             # Collect legend
             legends.append(f'{thetas[i]:.1f}°_Mu:{Mu:.1f}_Pu:{Pu:.1f}')
-    
-            # Find the max value of Mn and Pn
+
+            # Find the max and min values of Mn and Pn
+            x_min = min(x_min, min(Mns[i]))
             x_max = max(x_max, max(Mns[i]), Mu)
             y_max = max(y_max, max(Pns[i]), Pu)
             y_min = min(y_min, min(Pns[i]), Pu)
 
         leg = ax.legend(legends, loc='upper right')
         leg.set_draggable(True)
-        ax.set_xlim(0, x_max*1.1)
-        ax.set_ylim(y_min, y_max)
+        ax.set_xlim(x_min*1.1, x_max*1.1)  # 10% margin on both sides
+        ax.set_ylim(y_min*1.05, y_max*1.05)
 
     def plot_MM(self, c: Capacity):
         results = c.capacity
