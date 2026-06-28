@@ -16,7 +16,6 @@ import geometry
 from postprocessing import Plot
 from material import Material
 from capacity import Capacity
-import meshcut
 
 import faulthandler
 faulthandler.enable()
@@ -834,141 +833,219 @@ class ConcreteInteractionDiagram:
 
     def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
         """
-        Extract the 2D PM interaction curve for a given bending direction (theta_target).
+        Build the 2D PM interaction curve for a given bending direction theta.
 
-        The 3D interaction surface is a closed "balloon" shape in (Mnx, Mny, Pn) space —
-        every point on its surface represents a combination of axial load Pn and biaxial
-        moments (Mnx, Mny) that exactly reaches column capacity.
+        Background
+        ----------
+        The biaxial analysis produces a 3D interaction surface stored as a stack
+        of rings — one ring per axial-load level Pn. Each ring is a closed polygon
+        of moment capacity points (Mnx, Mny).
 
-        This function cuts that surface with a vertical plane at angle theta_target,
-        producing a single 2D PM curve: Mn (resultant moment) on the horizontal axis
-        and Pn (axial load) on the vertical axis.
+        To draw a 2D PM diagram the engineer picks a bending direction theta (e.g.
+        0° for pure x-bending, 90° for pure y-bending). The question for each ring
+        is: "what is the maximum moment the section can carry in direction theta at
+        this axial load?" That moment equals the distance from the origin (0, 0) to
+        the point on the ring that lies exactly along the theta direction.
+
+        How the ring is cut
+        -------------------
+        Imagine standing at the origin and shining a flashlight in direction theta.
+        The beam is a ray:  Mnx = M · cos(theta),  Mny = M · sin(theta).
+        Where that beam hits the ring polygon is the PM boundary.
+
+        To find the crossing numerically, each ring point is assigned a "side value":
+
+            side = −sin(theta) × Mnx + cos(theta) × Mny
+
+        side = 0 means the point is exactly on the theta ray (or its opposite).
+        side > 0 means the point is to the left of the beam.
+        side < 0 means the point is to the right of the beam.
+
+        When two consecutive ring points are on opposite sides (one positive, one
+        negative), the edge between them crosses the beam. Linear interpolation gives
+        the exact crossing location (Mnx_cross, Mny_cross), and then:
+
+            M = cos(theta) × Mnx_cross + sin(theta) × Mny_cross
+
+        gives the moment at that crossing — which is the distance from the origin to
+        that point on the ring.
+
+        We keep the largest M (positive side of the PM curve) and smallest M
+        (negative side), giving one point on each side per axial-load level.
+
+        Special cases
+        -------------
+        • Full-tension ring: at the very bottom (full tension, no moment), all ring
+          points collapse to nearly one location. The "side" values are all nearly
+          zero, so there are no meaningful crossings. The single point is projected
+          directly onto the theta direction instead.
+
+        • Ring with no crossing on one side: the section has no capacity in that
+          direction at this axial load. That side is set to zero.
+
+        • Asymmetric sections near full tension: for an asymmetric section the
+          full-tension point has an inherent moment eccentricity (e.g. the resultant
+          lands at Mnx = −28 kNm, not at the origin). For a bending direction theta
+          that does not pass through that point (e.g. theta = 90°), the capacity ring
+          near full tension never crosses the theta beam. Those rings are excluded from
+          the curve entirely. The two arcs are then closed with a V-tip at Mn = 0
+          anchored to the Pn of the last excluded ring — this is the deepest axial
+          load at which the section has any capacity in the theta direction.
+
+        This works for any section shape — symmetric, asymmetric, L, T, or H.
 
         Parameters
         ----------
-        theta_target : angle of the bending plane in degrees (0° = pure Mnx, 90° = pure Mny)
-        results      : Capacity object from run() — contains all precomputed capacity rings
-        element      : keys to read from results; default ["Pn", "Mnx", "Mny"] for nominal,
-                       or ["Pnr", "Mnxr", "Mnyr"] for reduced (phi-factored) capacity
+        theta_target : bending direction in degrees (0° = x-axis, 90° = y-axis)
+        results      : Capacity object containing the precomputed capacity rings
+        element      : three dictionary keys for [axial, x-moment, y-moment];
+                       defaults to ["Pn", "Mnx", "Mny"] for nominal capacity and
+                       should be changed to ["Pnr", "Mnxr", "Mnyr"] for reduced
 
         Returns
         -------
-        Mn : list of resultant moment values along the curve [kN·m]
-        Pn : list of corresponding axial load values [kN]
+        Mn : list[float]  moment along the PM curve [kN·m]
+        Pn : list[float]  corresponding axial load [kN]
         """
-        # Unpack the dictionary keys we will read from the capacity data.
-        # Using keys instead of hard-coded names lets this function work for both
-        # nominal (Pn/Mnx/Mny) and reduced (Pnr/Mnxr/Mnyr) capacities.
         Pn_string  = element[0]
         Mnx_string = element[1]
         Mny_string = element[2]
 
         capacity = results.capacity
-        n_levels = len(capacity)                    # number of axial load levels (P rings)
-        n_alpha  = len(capacity[0][Mnx_string])     # number of moment directions per ring
 
-        # -----------------------------------------------------------------
-        # STEP 1 — Rebuild the 3D surface as a triangular mesh.
-        #
-        # The capacity data is stored as n_levels rings, each ring being
-        # n_alpha (Mnx, Mny) points at a fixed Pn. We turn that grid into
-        # a proper 3D mesh so we can cut it precisely with a plane.
-        #
-        # verts = list of 3D points (Mnx, Mny, Pn), one per ring×direction pair.
-        # -----------------------------------------------------------------
-        verts_list = []
-        for k in range(n_levels):
-            result   = capacity[k]
-            pn_level = result[Pn_string][0]     # all directions in this ring share the same Pn
-            for i in range(n_alpha):
-                verts_list.append([result[Mnx_string][i], result[Mny_string][i], pn_level])
-        verts = np.array(verts_list, dtype=np.float64)
+        # Remove rings with duplicate Pn values (SNI axial-load cap).
+        seen_pn: set = set()
+        capacity_dedup = []
+        for level in capacity:
+            pn_key = round(level[Pn_string][0], 6)
+            if pn_key not in seen_pn:
+                seen_pn.add(pn_key)
+                capacity_dedup.append(level)
 
-        # faces = list of triangles, each defined by 3 vertex indices.
-        # Adjacent rings and adjacent directions form a rectangular patch
-        # (quad), which we split into 2 triangles. The last direction (i = n_alpha-1)
-        # wraps back to direction 0 so the ring closes without a gap.
-        faces_list = []
-        for k in range(n_levels - 1):
-            for i in range(n_alpha):
-                j   = (i + 1) % n_alpha     # next direction, wrapping around
-                v00 = k * n_alpha + i        # current ring, current direction
-                v01 = k * n_alpha + j        # current ring, next direction
-                v10 = (k + 1) * n_alpha + i  # next ring,    current direction
-                v11 = (k + 1) * n_alpha + j  # next ring,    next direction
-                faces_list.append([v00, v01, v11])  # triangle 1 of the quad
-                faces_list.append([v00, v11, v10])  # triangle 2 of the quad
-        faces = np.array(faces_list, dtype=np.int32)
+        theta_rad = theta_target / 180 * math.pi
+        cos_t     = math.cos(theta_rad)
+        sin_t     = math.sin(theta_rad)
 
-        # -----------------------------------------------------------------
-        # STEP 2 — Cut the mesh with a vertical plane at angle theta_target.
-        #
-        # The cutting plane passes through the origin and stands upright
-        # (vertical in the Pn direction). It divides the 3D space into the
-        # positive-moment half (Mn > 0) and the negative-moment half (Mn < 0)
-        # for the requested angle.
-        #
-        # A plane in 3D is described by a point it passes through (plane_orig)
-        # and a vector perpendicular to it (plane_norm).
-        # Here: plane_norm = (-sin_t, cos_t, 0), which is horizontal and
-        # perpendicular to the theta direction.
-        # -----------------------------------------------------------------
-        theta_rad  = theta_target / 180 * math.pi
-        cos_t      = math.cos(theta_rad)
-        sin_t      = math.sin(theta_rad)
-        plane_orig = np.array([0.0, 0.0, 0.0])             # plane passes through origin
-        plane_norm = np.array([-sin_t, cos_t, 0.0])        # perpendicular to theta direction
+        def _ring_cut(Mnx_list, Mny_list):
+            """
+            Find the PM boundary of a single ring by cutting it with the theta beam.
+            Returns (pos_M, neg_M): moment on the positive and negative side.
+            """
+            n = len(Mnx_list)
 
-        # meshcut.cross_section finds every edge of the mesh that crosses the plane
-        # and returns the intersection as one or more polylines (contours).
-        cross_sections = meshcut.cross_section(verts, faces, plane_orig, plane_norm)
+            # "Side value" for each ring point: positive = left of beam, negative = right.
+            # A sign change between two consecutive points means the edge crosses the beam.
+            side = [-sin_t * Mnx_list[i] + cos_t * Mny_list[i] for i in range(n)]
 
-        # Safety fallback: if the cut produced nothing (should not happen for a
-        # well-formed surface), return a zero-moment line spanning full Pn range.
-        fallback_Pn = [capacity[0][Pn_string][0], capacity[-1][Pn_string][0]]
-        if not cross_sections:
-            return [0.0, 0.0], fallback_Pn
+            # Special case: full-tension ring where all points are at nearly the same
+            # location. All side values are nearly zero, so treat as a single point.
+            ON_BEAM_TOLERANCE = 0.001  # kN·m
+            if all(abs(s) < ON_BEAM_TOLERANCE for s in side):
+                proj = [cos_t * Mnx_list[i] + sin_t * Mny_list[i] for i in range(n)]
+                return max(proj), min(proj)
 
-        # -----------------------------------------------------------------
-        # STEP 3 — Select the positive-moment arc.
-        #
-        # The cutting plane splits the surface exactly at the moment = 0 boundary,
-        # so meshcut returns TWO separate open arcs: one for the positive-moment
-        # side (the PM curve we want) and one for the negative-moment side.
-        # There may also be tiny fragments near the collapsed top/bottom rings.
-        #
-        # proj = projection of each point onto the theta direction = Mn value.
-        # We pick the arc with the largest positive Mn extent.
-        # -----------------------------------------------------------------
-        pos_contour  = None
-        max_proj_val = 0.0
-        for c in cross_sections:
-            # Project each point of this arc onto the theta direction to get its Mn value.
-            proj_c = c[:, 0] * cos_t + c[:, 1] * sin_t
-            if proj_c.max() > max_proj_val:
-                max_proj_val = proj_c.max()
-                pos_contour  = c   # keep the arc with the furthest positive reach
+            pos_M = None  # moment on the +theta side (beam going forward)
+            neg_M = None  # moment on the -theta side (beam going backward)
 
-        if pos_contour is None or max_proj_val <= 0:
-            return [0.0, 0.0], fallback_Pn
+            for i in range(n):
+                j      = (i + 1) % n   # next ring point (wraps around to 0 at the end)
+                side_i = side[i]
+                side_j = side[j]
 
-        # Convert the selected arc from 3D (Mnx, Mny, Pn) to 2D (Mn, Pn).
-        # Mn = resultant moment in the theta direction = Mnx*cos_t + Mny*sin_t
-        proj   = pos_contour[:, 0] * cos_t + pos_contour[:, 1] * sin_t   # Mn values
-        Pn_pts = pos_contour[:, 2]                                       # Pn values
+                if side_i * side_j < 0:
+                    # Edge crosses the beam: interpolate to find the exact crossing point.
+                    # t = 0 is point i, t = 1 is point j; t = side_i/(side_i - side_j)
+                    # places us exactly where side = 0.
+                    t      = side_i / (side_i - side_j)
+                    Mnx_cross = Mnx_list[i] + t * (Mnx_list[j] - Mnx_list[i])
+                    Mny_cross = Mny_list[i] + t * (Mny_list[j] - Mny_list[i])
+                elif abs(side_i) < ON_BEAM_TOLERANCE and abs(side_j) >= ON_BEAM_TOLERANCE:
+                    # Point i sits exactly on the beam — use it directly as the crossing.
+                    Mnx_cross = Mnx_list[i]
+                    Mny_cross = Mny_list[i]
+                else:
+                    continue  # edge does not cross the beam
 
-        # -----------------------------------------------------------------
-        # STEP 4 — Close the curve onto the Mn = 0 axis.
-        #
-        # The arc is an open line whose two endpoints lie exactly on the
-        # cutting plane (Mn ≈ 0). Adding Mn = 0 at both ends connects the
-        # curve to the vertical P-axis, completing the standard PM diagram shape.
-        # -----------------------------------------------------------------
-        pn_enter = float(Pn_pts[0])   # Pn at the start of the arc (where Mn = 0)
-        pn_exit  = float(Pn_pts[-1])  # Pn at the end   of the arc (where Mn = 0)
+                # Moment at the crossing = distance from origin along the theta direction.
+                M = cos_t * Mnx_cross + sin_t * Mny_cross
+                if M >= 0:
+                    pos_M = M if pos_M is None else max(pos_M, M)
+                else:
+                    neg_M = M if neg_M is None else min(neg_M, M)
 
-        Mn = [0.0] + list(proj) + [0.0]
-        Pn = [pn_enter] + list(Pn_pts) + [pn_exit]
+            # Handle rings where one or both sides had no crossing.
+            if pos_M is None or neg_M is None:
+                # Check whether the ring is degenerate (all points close together).
+                # This catches the full-tension ring that wasn't caught by the tolerance
+                # check above (e.g. points are close but not all on the beam).
+                cx    = sum(Mnx_list) / n
+                cy    = sum(Mny_list) / n
+                max_spread = max(math.sqrt((Mnx_list[i] - cx) ** 2 +
+                                           (Mny_list[i] - cy) ** 2) for i in range(n))
+                if max_spread < 1.0:
+                    # Degenerate ring (e.g. full-tension ring collapsed to one point).
+                    # Project the centroid onto theta. If the projection is effectively
+                    # zero, the full-tension point doesn't lie in the theta direction —
+                    # return None so the ring is excluded from the curve.
+                    M_pt = cx * cos_t + cy * sin_t
+                    if abs(M_pt) > ON_BEAM_TOLERANCE:
+                        if pos_M is None:
+                            pos_M = M_pt
+                        if neg_M is None:
+                            neg_M = M_pt
+                    else:
+                        return None, None
+                else:
+                    if pos_M is None and neg_M is None:
+                        # Ring has no capacity in the theta direction at all.
+                        # Exclude it so the curve starts at the first ring that does.
+                        return None, None
+                    # Only one side is missing: the boundary genuinely touches zero.
+                    if pos_M is None:
+                        pos_M = 0.0
+                    if neg_M is None:
+                        neg_M = 0.0
+
+            return pos_M, neg_M
+
+        max_proj_list: list = []
+        min_proj_list: list = []
+        pn_level_list: list = []
+
+        first_included_idx = None   # ring index of the first ring with capacity in theta direction
+        last_skipped_pn   = None    # Pn of the deepest ring that had no capacity (used for the V-tip)
+
+        for idx, ring in enumerate(capacity_dedup):
+            pn_level = float(ring[Pn_string][0])
+            pos_M, neg_M = _ring_cut(
+                [float(v) for v in ring[Mnx_string]],
+                [float(v) for v in ring[Mny_string]],
+            )
+            if pos_M is None and neg_M is None:
+                # Only track the tip candidate before the first included ring.
+                # Skipped rings at the top (full compression) must be ignored.
+                if first_included_idx is None:
+                    last_skipped_pn = pn_level
+                continue
+            if first_included_idx is None:
+                first_included_idx = idx
+            max_proj_list.append(pos_M if pos_M is not None else 0.0)
+            min_proj_list.append(neg_M if neg_M is not None else 0.0)
+            pn_level_list.append(pn_level)
+
+        # If rings at the bottom were skipped (section has no capacity in this
+        # direction near full tension), insert a tip point at Mn=0 at the Pn of
+        # the last skipped ring. Both arcs converge here, giving a sharp V bottom
+        # instead of a flat horizontal cap.
+        if last_skipped_pn is not None and first_included_idx is not None and first_included_idx > 0:
+            max_proj_list.insert(0, 0.0)
+            min_proj_list.insert(0, 0.0)
+            pn_level_list.insert(0, last_skipped_pn)
+
+        # Build closed PM curve: positive arc (ascending Pn) then negative arc
+        # (descending Pn), closed back to the starting point.
+        Mn = max_proj_list + list(reversed(min_proj_list)) + [max_proj_list[0]]
+        Pn = pn_level_list + list(reversed(pn_level_list)) + [pn_level_list[0]]
         return Mn, Pn
 
     def interpolate_PM_at_loads(self, loads: dict, results: list, reduced=False):
@@ -1203,7 +1280,7 @@ def run(solution: ConcreteInteractionDiagram):
 
     # Interpolate PM graphs at multiple thetas
     now = dt.datetime.now()
-    target_thetas = [0, 90, 180, 270]
+    target_thetas = [0, 90]
     Mns1, Pns1 = solution.interpolate_PM_at_thetas(target_thetas, nominalCapacity)
     phiMns1, phiPns1 = solution.interpolate_PM_at_thetas(target_thetas, reducedCapacity)
 
