@@ -118,6 +118,7 @@ class ConcreteInteractionDiagram:
         Find combination of Mnx and Mny, such that Pn is close to Pn_target
             by utilizing Brent method.
         """
+        self.Pn_target = Pn_target
         d, r = brentq(
             f=self.compute_Pn_brent,
             a=c_min,
