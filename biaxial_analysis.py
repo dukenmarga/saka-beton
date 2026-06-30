@@ -357,11 +357,18 @@ class ConcreteInteractionDiagram:
         # to avoid numerical error (no compression or tension area is formed).
         # Hence we offset 1mm from top and bottom   
         c_min =  1
-        c_max = h_max - 1
-        # Case when checking near full compression, we increase the c_max.
-        # This means the neutral axis will be further away from the compression zone.
-        if P > 0.9*self.Po():
-            c_max = h_max * 3
+        # c_max is the maximum possibility of neutral axis distance from the extreme of compression fibre.
+        # Theoritically c_max is unlimited if we are at full compression.
+        # But, there is a point where the concrete is assumed to be fully compressed.
+        # The staarting point is where c_max is equal to h_max/beta1. Beyond this point, we assume
+        # the concrete is fully compressed.
+        # So c_max theoritically can be h_max/beta1.
+        # But, to reduce computation time, we only use h_max/beta1 when P > 95% of Po.
+        # Otherwise, we can safely limit c_max to h_max.
+        if P > 0.95*self.Po():
+            c_max = h_max / self.beta1
+        else:
+            c_max = h_max
 
         Pn, Mnx, Mny, eps_t = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
 
@@ -391,37 +398,16 @@ class ConcreteInteractionDiagram:
         XO = self.XO
         YO = self.YO
 
-        # Construct compressed concrete region
-        compression_parts, na_line, c_gt_hmax = self.construct_concrete_compression_region(c, alpha)
-
-        # If we are calculating axial-moment capacity, the compression capacity
-        # is calculated using beta1 (derived from fc')
-        # -> Cc = beta1*c*0.85fc'.bw.
-        # -> Cc = a*0.85fc'.bw
-        # where a is moment length from the centroid of compression block to neutral axis
-        #
-        # But, if neutral axis is greater than the height of the section [c > c_max],
-        # then we don't use beta1 since strain and stress is almost uniform (no tension part),
-        # hence we don't need beta1 to correct the stress shape (or let's say the beta1 is equal to 1).
-        # In order to prevent "jump" in Pcn (from using beta1 to not using beta1), there is
-        # a linear interpolation between beta1 and 1. We will use term Kpc to represent the
-        # interpolation factor.
-        # -> if c < c_max:  beta1 = f(fc'); Kpc = 1
-        # -> if c >= c_max; beta1 = 1; Kpc = (beta1 + (1 - beta1) * (c - c_max) / (c_max/beta1-c_max))
-        # Note: the beta1 is unused or beta1 is set to 1, only when calculating compression capacity.
-        # For calculating the moment (see function compute_Pn_Mn), the beta1 is always used.
-        c_max = self.h_max
-        beta1 = self.beta1
-        Kpc = 1
-        if c_gt_hmax:
-            Kpc = (beta1 + (1 - beta1) * (c - c_max) / (c_max/beta1-c_max))
-            beta1 = 1
+        # Construct compression region.
+        # Compression region is same as Whitney stress block.
+        # In rectangle, this area is equal to Area = c * beta1 * bw
+        compression_parts, na_line = self.construct_concrete_compression_region(c, alpha)
 
         # Calculate Pn for each compressed part
         Pcn = 0
         for compression_parts in compression_parts:
             Pcn_part = self.Pcn(compression_parts)
-            Pcn += Pcn_part * beta1 * Kpc
+            Pcn += Pcn_part
 
         # Calculate coordinate O' (Xa, Ya) in global axis
         mid_na_line = na_line.interpolate(0.5, True)
@@ -493,7 +479,6 @@ class ConcreteInteractionDiagram:
         # 0.85 is fc' reduction due to size effect based on Hognestad research
         Pn = (Pcn - sum_As_fci) + sum_As_fs
 
-        # Return nominal capacity based on selected alpha and h
         return Pn
 
     def compute_Pn_Mn(self, c: float = 10, alpha: float = 0):
@@ -509,54 +494,25 @@ class ConcreteInteractionDiagram:
         Mcnx = 0
         Mcny = 0
 
-        # Construct compression region. Compressed area will be used along with beta1
-        # to calculate Pcn = Area * beta1 * (0.85fc').
-        # Compressed area in this case is calculated from the neutral axis or in rectangle
-        # this area is equal to Area = c * bw
-        compressed_parts, na_line, c_gt_hmax = self.construct_concrete_compression_region(c, alpha)
-
-        # But, for moment capacity, we need to calculate the centroid of compression block.
-        # Hence, we need to recalculate compressive area as if this area is uniform (has been reduced
-        # by beta1). Then, we can calculate the centroid of compression block.
+        # Construct compression region.
+        # Compression region is same as Whitney stress block.
         # In rectangle, this area is equal to Area = c * beta1 * bw
-        h_beta1 = c * self.beta1
-        compressed_parts_uniform, _, _ = self.construct_concrete_compression_region(c=h_beta1, alpha=alpha)
-        ecc = self.compute_centroid_from_polygons(compressed_parts_uniform)
+        compressed_parts, na_line = self.construct_concrete_compression_region(c, alpha)
 
-        # If we are calculating axial-moment capacity, the compression capacity
-        # is calculated using beta1 (derived from fc')
-        # -> Cc = beta1*c*0.85fc'.bw.
-        # -> Cc = a*0.85fc'.bw
-        # where a is moment length from the centroid of compression block to neutral axis
-        #
-        # But, if neutral axis is greater than the height of the section [c > c_max],
-        # then we don't use beta1 since strain and stress is almost uniform (no tension part),
-        # hence we don't need beta1 to correct the stress shape (or let's say the beta1 is equal to 1).
-        # In order to prevent "jump" in Pcn (from using beta1 to not using beta1), there is
-        # a linear interpolation between beta1 and 1. We will use term Kpc to represent the
-        # interpolation factor.
-        # -> if c < c_max:  beta1 = f(fc'); Kpc = 1
-        # -> if c >= c_max; beta1 = 1; Kpc = (beta1 + (1 - beta1) * (c - c_max) / (c_max/beta1-c_max))
-        # Note: the beta1 is unused or beta1 is set to 1, only when calculating compression capacity.
-        # For calculating the moment, the beta1 is always used.
-        c_max = self.h_max
-        beta1 = self.beta1
-        Kpc = 1
-        if c_gt_hmax:
-            Kpc = (beta1 + (1 - beta1) * (c - c_max) / (c_max/beta1-c_max))
-            beta1 = 1
+        # Calculate the centroid of Whitney's compression stress block.
+        ecc = self.compute_centroid_from_polygons(compressed_parts)
 
         for compressed_part in compressed_parts:
             Pcn_part = self.Pcn(compressed_part)
-            Pcn += Pcn_part * beta1 * Kpc
+            Pcn += Pcn_part
 
             # Extract moment length
             x_depth = ecc[0]
             y_depth = ecc[1]
 
             # Moment capacity is always calculated using beta1
-            Mcnx += Pcn_part * self.beta1 * y_depth / 1e3
-            Mcny += Pcn_part * self.beta1 * x_depth / 1e3
+            Mcnx += Pcn_part * y_depth / 1e3
+            Mcny += Pcn_part * x_depth / 1e3
 
         # Calculate coordinate O' (Xa, Ya) in global axis
         mid_na_line = na_line.interpolate(0.5, True)
@@ -708,16 +664,20 @@ class ConcreteInteractionDiagram:
         # Yec: y coordinate of the most compressed point (global axis)
         xec, yec, Xec, Yec, _, yet, _, _ = self.calculate_depth(na_line=helper_line)
 
-        # COMPRESSION LINE and COMPRESSION REGION
+        # 1. NEUTRAL AXIS LINE
 
-        h_max = self.h_max
-        h_comp = c
+        na_point = np.array([[xec, yec-c]])
 
-        # State where c >= h_max
-        c_gt_hmax = False
-        if c >= h_max:
-            h_comp = h_max - 1
-            c_gt_hmax = True
+        # Map from local to global.
+        # The NA point uses global coordinates.
+        na_point = geometry.map_to_global(na_point, XO, YO, XO, YO, helper_line)
+
+        # Construct neutral axis (measured from from xe, ye)
+        na_line = self.construct_line(point_on_line=(na_point[0][0], na_point[0][1]), alpha=alpha)
+
+        # 2. COMPRESSION LINE and COMPRESSION REGION
+
+        h_comp = c*self.beta1
 
         # This is a point measured from the most compressed point
         # It still uses local coordinates.
@@ -737,24 +697,17 @@ class ConcreteInteractionDiagram:
         # Make a polygon from the concrete boundary
         concrete_polygon = Polygon(concrete_boundary[['x', 'y']].values)
 
+        # If h_comp beyond the section height, we return the whole concrete shape
+        if h_comp >= self.h_max:
+            return [np.array(concrete_polygon.exterior.coords.xy).T], na_line
+
         # Get compressed part from the concrete if all the section is crossed by
         # the compression axis
         # Xe, Ye: indicator of the most compressed point, so it knows which part
         # is in compressed
         compressed_parts = geometry.get_compressed_parts(concrete_polygon, comp_line, (Xec, Yec))
 
-        # NEUTRAL AXIS LINE
-
-        na_point = np.array([[xec, yec-c]])
-
-        # Map from local to global.
-        # The NA point uses global coordinates.
-        na_point = geometry.map_to_global(na_point, XO, YO, XO, YO, helper_line)
-
-        # Construct neutral axis (measured from from xe, ye)
-        na_line = self.construct_line(point_on_line=(na_point[0][0], na_point[0][1]), alpha=alpha)
-
-        return compressed_parts, na_line, c_gt_hmax
+        return compressed_parts, na_line
 
     def first_and_last_node_same(self, points: np.ndarray = None):
         """
@@ -778,7 +731,14 @@ class ConcreteInteractionDiagram:
         self.Pn_target = Pn_target
         Pn1 = self.compute_Pn(c1, alpha)
 
-        max_iter = 20
+        # Increase tolerance if Pn_target is close to Po.
+        if Pn_target > 0.95*self.Po():
+            tol = 3
+
+        # Maximum number of iterations
+        max_iter = 50
+
+        # Iterate until convergence
         while iter_count < max_iter:
             iter_count += 1
             error = False
@@ -818,19 +778,28 @@ class ConcreteInteractionDiagram:
                 Pn2, Mnx2, Mny2, eps_t = self.compute_Pn_Mn(c2, alpha)
                 return Pn2, Mnx2, Mny2, eps_t
 
-            # To prevent c3 from being out of range (c_min and c_max),
+            # To prevent c3 from being out of range (less than 0, impossible),
             # bisection method is used.
             # c3 is iteratively updated until it is in range
             if c3 < 0:
                 while c3 < 0:
                     c3 = (c3+c2)/2
 
+            # To prevent c3 from being out of range (greater than c_max/0.65),
+            # bisection method is used.
+            # Value of 0.65 is based on the lowest possible value of beta1.
+            # c3 is iteratively updated until it is in range
+            if c3 > c_max/0.65:
+                while c3 > c_max/0.65:
+                    c3 = (c3+c2)/2
+
+
             # Update the values for next iteration if there is no error
             # and still not reaching the convergence
             c1, Pn1 = c2, Pn2
             c2 = c3
 
-        raise ValueError(f"Secant method did not converge at P: {Pn_target} KN and alpha: {alpha}. Pn2: {Pn2} KN. Please check the input parameters.")
+        raise ValueError(f"Secant method did not converge at Pn-target: {Pn_target} KN and alpha: {alpha}. Pn2: {Pn2} KN. iterations: {iter_count}. Please check the input parameters.")
 
     def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
         """
