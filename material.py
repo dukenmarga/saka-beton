@@ -36,11 +36,30 @@ class Material:
         B = eps_u - eps_0
         return fc_ * (1 - gamma * (A / B))
 
+    def concrete_stress_strain_hognestad_modified(self, eps_c: float):
+        """
+        Returns the concrete stress-strain curve (parabolic),
+        modified based on Hognestad model.
+        There isn't descending line after peak concrete strength
+        """
+        fc_ = self.fc_
+        eps_0 = self.epsilon_0
+
+        if eps_c < 0:
+            return 0
+        # Ascending curve
+        if eps_c <= eps_0:
+            A = 2 * eps_c / eps_0
+            B = (eps_c / eps_0) ** 2
+            return fc_ * (A - B)
+        return fc_
+
+
     def concrete_stress_strain(self, eps_c: float):
         """
         Returns the concrete stress-strain curve (parabolic)
         """
-        return self.concrete_stress_strain_hognestad(eps_c)
+        return self.concrete_stress_strain_hognestad_modified(eps_c)
 
     def concrete_stress_strain_ufunc(self, eps_c: float):
         return np.vectorize(self.concrete_stress_strain, otypes=[float])(eps_c)
