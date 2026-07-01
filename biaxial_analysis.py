@@ -10,6 +10,7 @@ from scipy.optimize import brentq
 from shapely import LineString, Polygon, Point
 from shapely.affinity import rotate
 from typing import Literal
+from functools import cached_property
 
 from sni_2847 import SNI_2847_2019
 import geometry
@@ -365,7 +366,7 @@ class ConcreteInteractionDiagram:
         # So c_max theoritically can be h_max/beta1.
         # But, to reduce computation time, we only use h_max/beta1 when P > 95% of Po.
         # Otherwise, we can safely limit c_max to h_max.
-        if P > 0.95*self.Po():
+        if P > 0.95*self.Po:
             c_max = h_max / self.beta1
         else:
             c_max = h_max
@@ -422,7 +423,7 @@ class ConcreteInteractionDiagram:
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
         # We use c, since it is the location of the neutral axis.
         # For full compression, we return the ultimate concrete strain
-        if self.Pn_target == self.Po():
+        if self.Pn_target == self.Po:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
             rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
@@ -527,7 +528,7 @@ class ConcreteInteractionDiagram:
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
         # We use c, since it is the location of the neutral axis.
         # For full compression, we return the ultimate concrete strain
-        if self.Pn_target == self.Po():
+        if self.Pn_target == self.Po:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
             rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
@@ -732,7 +733,7 @@ class ConcreteInteractionDiagram:
         Pn1 = self.compute_Pn(c1, alpha)
 
         # Increase tolerance if Pn_target is close to Po.
-        if Pn_target > 0.95*self.Po():
+        if Pn_target > 0.95*self.Po:
             tol = 3
 
         # Maximum number of iterations
@@ -1094,6 +1095,7 @@ class ConcreteInteractionDiagram:
             theta += 360
         return theta
 
+    @cached_property
     def Po(self):
         """
         Nominal compressive strength, without reduction to consider accidental eccentricity
@@ -1159,7 +1161,7 @@ class ConcreteInteractionDiagram:
 
         # Supress scientific notation
         np.set_printoptions(suppress=True)
-        Po = self.Po()
+        Po = self.Po
         Pn_min = self.Pt_max()
 
         # Nominal capacity and reduced capacity
