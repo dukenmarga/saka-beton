@@ -267,8 +267,9 @@ class ConcreteInteractionDiagram:
             c: depth of compressed concrete from neutral axis
             epsilon_u: ultimate strain of concrete (usually 0.003)
         """
+        # c zero means full compression
         if c == 0:
-            raise ValueError("concrete compression depth cannot be zero")
+            return -self.material.epsilon_u
 
         return rebar_y / c * self.material.epsilon_u
 
@@ -354,22 +355,15 @@ class ConcreteInteractionDiagram:
         # c_min and c_max are limit where we will iterate to find Mnx and Mny.
         # c is measure from top of compression zone.
         # c = 5 mm means the distance from top of compression zone to the neutral axis.
-        # Avoid c at the farthest point of compression and tension
-        # to avoid numerical error (no compression or tension area is formed).
-        # Hence we offset 1mm from top and bottom   
-        c_min =  1
+        c_min = 0
         # c_max is the maximum possibility of neutral axis distance from the extreme of compression fibre.
         # Theoritically c_max is unlimited if we are at full compression.
         # But, there is a point where the concrete is assumed to be fully compressed.
-        # The staarting point is where c_max is equal to h_max/beta1. Beyond this point, we assume
+        # The starting point is where c_max is equal to h_max/beta1. Beyond this point, we assume
         # the concrete is fully compressed.
         # So c_max theoritically can be h_max/beta1.
-        # But, to reduce computation time, we only use h_max/beta1 when P > 95% of Po.
-        # Otherwise, we can safely limit c_max to h_max.
-        if P > 0.95*self.Po:
-            c_max = h_max / self.beta1
-        else:
-            c_max = h_max
+        # We add 1% to make sure we are not at the boundary.
+        c_max = h_max / self.beta1 * 1.01
 
         Pn, Mnx, Mny, eps_t = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
 
@@ -423,7 +417,7 @@ class ConcreteInteractionDiagram:
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
         # We use c, since it is the location of the neutral axis.
         # For full compression, we return the ultimate concrete strain
-        if self.Pn_target == self.Po:
+        if c >= self.h_max/self.beta1:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
             rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
@@ -477,8 +471,11 @@ class ConcreteInteractionDiagram:
         # Total nominal capacity
         # Pn: Nominal axial capacity
         # (to be consistent with formula from SNI/ACI subsection 22.4.2.2)
-        # 0.85 is fc' reduction due to size effect based on Hognestad research
-        Pn = (Pcn - sum_As_fci) + sum_As_fs
+        # We introduce 0.001 KN to avoid error when using Brent method,
+        # where f(b) might be very close to 0 but in negative side.
+        # So, to prevent both f(a) and f(b) have same negative sign,
+        # adding 0.001 KN is necessary to move f(b) to positive side.
+        Pn = (Pcn - sum_As_fci) + sum_As_fs + 0.001
 
         return Pn
 
@@ -528,7 +525,7 @@ class ConcreteInteractionDiagram:
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
         # We use c, since it is the location of the neutral axis.
         # For full compression, we return the ultimate concrete strain
-        if self.Pn_target == self.Po:
+        if c >= self.h_max/self.beta1:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
             rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
@@ -630,7 +627,11 @@ class ConcreteInteractionDiagram:
             sum_x += x_cen_part * area
             sum_y += y_cen_part * area
             sum_area += area
-        
+
+        # Avoid division by 0
+        if sum_area == 0:
+            return 0, 0
+
         x_cen = sum_x / sum_area
         y_cen = sum_y / sum_area
 
@@ -702,6 +703,10 @@ class ConcreteInteractionDiagram:
         if h_comp >= self.h_max:
             return [np.array(concrete_polygon.exterior.coords.xy).T], na_line
 
+        # If compresison height is zero, return nothing
+        if h_comp == 0:
+            return [], na_line
+
         # Get compressed part from the concrete if all the section is crossed by
         # the compression axis
         # Xe, Ye: indicator of the most compressed point, so it knows which part
@@ -737,7 +742,11 @@ class ConcreteInteractionDiagram:
             tol = 3
 
         # Maximum number of iterations
-        max_iter = 50
+        max_iter = 100
+
+        # Initialize values to track best c
+        best_diff = 10000
+        best_c = 0
 
         # Iterate until convergence
         while iter_count < max_iter:
@@ -748,6 +757,14 @@ class ConcreteInteractionDiagram:
                 Pn2 = self.compute_Pn(c2, alpha)
             except ValueError:
                 error = True
+
+            # Find the best c that will be used later
+            # if it's not converging.
+            # Usually this condition will often happen
+            # near full compression.
+            if abs(Pn2-Pn_target) < best_diff:
+                best_diff = abs(Pn2-Pn_target)
+                best_c = c2
 
             # Avoid division by zero
             if abs(Pn2 - Pn1) < 1e-6:
@@ -780,19 +797,14 @@ class ConcreteInteractionDiagram:
                 return Pn2, Mnx2, Mny2, eps_t
 
             # To prevent c3 from being out of range (less than 0, impossible),
-            # bisection method is used.
-            # c3 is iteratively updated until it is in range
+            # bisection method is being used by averaging c_min=0 and c2
             if c3 < 0:
-                while c3 < 0:
-                    c3 = (c3+c2)/2
+                c3 = c2/2
 
-            # To prevent c3 from being out of range (greater than c_max/0.65),
-            # bisection method is used.
-            # Value of 0.65 is based on the lowest possible value of beta1.
-            # c3 is iteratively updated until it is in range
-            if c3 > c_max/0.65:
-                while c3 > c_max/0.65:
-                    c3 = (c3+c2)/2
+            # To prevent c3 from being out of range (greater than c_max),
+            # bisection method is being used by averaging c_max and c2
+            if c3 > c_max:
+                c3 = (c_max+c2)/2
 
 
             # Update the values for next iteration if there is no error
@@ -800,7 +812,8 @@ class ConcreteInteractionDiagram:
             c1, Pn1 = c2, Pn2
             c2 = c3
 
-        raise ValueError(f"Secant method did not converge at Pn-target: {Pn_target} KN and alpha: {alpha}. Pn2: {Pn2} KN. iterations: {iter_count}. Please check the input parameters.")
+        # Return the result from the best estimate if not convergence
+        return self.compute_Pn_Mn(best_c, alpha)
 
     def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
         """
