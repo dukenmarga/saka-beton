@@ -10,7 +10,7 @@ from scipy.optimize import brentq
 from shapely import LineString, Polygon, Point
 from shapely.affinity import rotate
 from typing import Literal
-from functools import cached_property
+from functools import cached_property, cache
 
 from sni_2847 import SNI_2847_2019
 import geometry
@@ -384,6 +384,7 @@ class ConcreteInteractionDiagram:
         Pn = self.compute_Pn(c, alpha)
         return Pn - Pn_target
 
+    @cache
     def compute_Pn(self, c: float = 10, alpha: float = 0):
         """
         Calculate Pn from alpha and h
@@ -638,6 +639,7 @@ class ConcreteInteractionDiagram:
         centroids = [x_cen, y_cen]
         return centroids
 
+    @cache
     def construct_concrete_compression_region(self, c: float, alpha: float = 0):
         """
         Construct concrete compression region.
