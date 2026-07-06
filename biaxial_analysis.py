@@ -349,8 +349,8 @@ class ConcreteInteractionDiagram:
 
         # Get maximum depth from virtual axis to the farthest point of compression and tension
         _, yec, _, _, _, yet, _, _ = self.calculate_depth(va)
-        h_max = yec + (-yet)
-        self.h_max = h_max
+        h = yec + (-yet)
+        self.h = h
 
         # c_min and c_max are limit where we will iterate to find Mnx and Mny.
         # c is measure from top of compression zone.
@@ -359,11 +359,11 @@ class ConcreteInteractionDiagram:
         # c_max is the maximum possibility of neutral axis distance from the extreme of compression fibre.
         # Theoritically c_max is unlimited if we are at full compression.
         # But, there is a point where the concrete is assumed to be fully compressed.
-        # The starting point is where c_max is equal to h_max/beta1. Beyond this point, we assume
+        # The starting point is where c_max is equal to h/beta1. Beyond this point, we assume
         # the concrete is fully compressed.
-        # So c_max theoritically can be h_max/beta1.
+        # So c_max theoritically can be h/beta1.
         # We add 1% to make sure we are not at the boundary.
-        c_max = h_max / self.beta1 * 1.01
+        c_max = h / self.beta1 * 1.01
 
         Pn, Mnx, Mny, eps_t = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
 
@@ -418,7 +418,7 @@ class ConcreteInteractionDiagram:
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
         # We use c, since it is the location of the neutral axis.
         # For full compression, we return the ultimate concrete strain
-        if c >= self.h_max/self.beta1:
+        if c >= self.h/self.beta1:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
             rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
@@ -526,7 +526,7 @@ class ConcreteInteractionDiagram:
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
         # We use c, since it is the location of the neutral axis.
         # For full compression, we return the ultimate concrete strain
-        if c >= self.h_max/self.beta1:
+        if c >= self.h/self.beta1:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
             rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
@@ -642,17 +642,7 @@ class ConcreteInteractionDiagram:
     @cache
     def construct_concrete_compression_region(self, c: float, alpha: float = 0):
         """
-        Construct concrete compression region.
-
-        There are 2 cases:
-        1. c < h_max: the neutral axis is inside the compression region
-        2. c >= h_max: the neutral axis is outside the compression region
-        But, for the second case, we limit the compression region to h_max.
-        Hence, compressed region is not always aligned with the neutral axis.
-        We will distinguish these two lines as: compression line and neutral axis line.
-        - c < h_max: neutral axis is aligned with compression line
-        - c >= h_max: neutral axis is not aligned with compression line, compression line
-          can't go lower than h_max, but neutral axis can go lower than h_max
+        Construct concrete compression region and neutral axis.
         """
         XO = self.XO
         YO = self.YO
@@ -702,7 +692,7 @@ class ConcreteInteractionDiagram:
         concrete_polygon = Polygon(concrete_boundary[['x', 'y']].values)
 
         # If h_comp beyond the section height, we return the whole concrete shape
-        if h_comp >= self.h_max:
+        if h_comp >= self.h:
             return [np.array(concrete_polygon.exterior.coords.xy).T], na_line
 
         # If compresison height is zero, return nothing
@@ -1133,10 +1123,10 @@ class ConcreteInteractionDiagram:
         Pcn: float = 0
 
         # Calculate compression area
-        compression_area = geometry.calculate_concrete_area(concrete_compressed_boundary_xy)
+        Ac = geometry.calculate_concrete_area(concrete_compressed_boundary_xy)
 
         # Calculate Pn contributed by concrete compression
-        Pcn = 0.85*self.material.fc_ * compression_area / 1e3
+        Pcn = 0.85*self.material.fc_ * Ac / 1e3
 
         return Pcn
 
