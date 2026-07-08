@@ -1,16 +1,24 @@
 import numpy as np
+import math
 
 class Material:
     def __init__(self, fc_, fy, fsu, epsilon_0, epsilon_u, gamma, Es, eps_sh, eps_su):
         self.fc_ = fc_
         self.fy = fy
         self.fsu = 1.1 * fy if fsu is None else fsu
-        self.epsilon_0 = epsilon_0
+        if epsilon_0 is None:
+            Ec = self.Ec()
+            self.epsilon_0 = 2*self.fc_ / Ec
+        else:
+            self.epsilon_0 = epsilon_0
         self.epsilon_u = epsilon_u
         self.gamma = gamma
         self.Es = Es
         self.eps_sh = eps_sh
         self.eps_su = eps_su
+
+    def Ec(self):
+        return 4700 * math.sqrt(self.fc_)
 
     def concrete_stress_strain_hognestad(self, eps_c: float):
         """
