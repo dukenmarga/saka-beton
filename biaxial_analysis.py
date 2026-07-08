@@ -743,12 +743,8 @@ class ConcreteInteractionDiagram:
         # Iterate until convergence
         while iter_count < max_iter:
             iter_count += 1
-            error = False
 
-            try:
-                Pn2 = self.compute_Pn(c2, alpha)
-            except ValueError:
-                error = True
+            Pn2 = self.compute_Pn(c2, alpha)
 
             # Find the best c that will be used later
             # if it's not converging.
@@ -758,22 +754,10 @@ class ConcreteInteractionDiagram:
                 best_diff = abs(Pn2-Pn_target)
                 best_c = c2
 
-            # Avoid division by zero
+            # Avoid division by zero.
+            # But if still true, reset and swap values
+            # (opposite of initial value before looping)
             if abs(Pn2 - Pn1) < 1e-6:
-                error = True
-
-            # If c1 and c2 are out of range (getting bigger for each iteration),
-            # it indicates that the method is not converging.
-            # The possibility is initial c1 and c2 are wrong.
-            # Hence, we need to swap c1 and c2 (based on c_min and c_max).
-            # We choose 5_000 as limit, since physically it is very unlikely
-            # to have a concrete dimension greater than 5_000 mm
-            elif abs(c1) > 5_000 or abs(c2) > 5_000:
-                error = True
-
-            # If there is an error, we are attempting to swap c1 and c2
-            if error:
-                # Reset and swap values (opposite of initial value before looping)
                 c1 = c_max
                 c2 = c_min
                 Pn1 = self.compute_Pn(c1, alpha)
