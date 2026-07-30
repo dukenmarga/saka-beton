@@ -31,8 +31,8 @@ class ConcreteInteractionDiagram:
             fc_ = 30, # MPa
             fy = 400, # MPa
             fsu = None, # MPa
-            epsilon_0 = 0.002,
-            epsilon_u = 0.0038,
+            epsilon_0 = None,
+            epsilon_u = 0.003,
             gamma = 0.15,
             Es = 200000, # MPa 
             eps_sh = 0.015, # 0.005 - 0.025, depend on material
