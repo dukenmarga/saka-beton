@@ -1217,7 +1217,7 @@ class ConcreteInteractionDiagram:
             })
 
         # Convert list to dataframe
-        results = pd.DataFrame(results, columns=["Axial (Pn)", "Moment X (Mnx)", "Moment X (Mny)", "eps_t", "alpha", "theta", "phi", "phiPn", "phiMnx", "phiMny", "N.A Depth (c)"])
+        results = pd.DataFrame(results, columns=["Axial (Pn)", "Moment X (Mnx)", "Moment Y (Mny)", "eps_t", "alpha", "theta", "phi", "phiPn", "phiMnx", "phiMny", "N.A Depth (c)"])
 
         return nc, rc, results
 
