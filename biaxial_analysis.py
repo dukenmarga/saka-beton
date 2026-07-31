@@ -365,7 +365,7 @@ class ConcreteInteractionDiagram:
         # We add 1% to make sure we are not at the boundary.
         c_max = h / self.beta1 * 1.01
 
-        Pn, Mnx, Mny, eps_t, c = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
+        Pn, Mnx, Mny, eps_t, Pc, Pcr, Ps, c = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
 
         # Calculate theta, the angle between Mnx and Mny
         theta = math.atan2(Mny, Mnx) * 180 / math.pi
@@ -378,7 +378,7 @@ class ConcreteInteractionDiagram:
         sni = self.sni
         phi = sni.compute_phi(reduction_type="moment_axial", eps_t=eps_t, eps_y=eps_y)
 
-        return Pn, Mnx, Mny, eps_t, alpha, theta, phi, c
+        return Pn, Mnx, Mny, eps_t, alpha, theta, phi, Pc, Pcr, Ps,c
 
     def compute_Pn_brent(self, c: float = 10, alpha: float = 0, Pn_target: float = 0):
         Pn = self.compute_Pn(c, alpha)
@@ -609,7 +609,7 @@ class ConcreteInteractionDiagram:
 
         # Return nominal capacity based on selected alpha and h,
         # and strain of the most tensile rebar
-        return Pn, MnX, MnY, eps_t
+        return Pn, MnX, MnY, eps_t, Pcn, sum_As_fci, sum_As_fs
 
     def compute_centroid_from_polygons(self, polygons: np.ndarray):
         """
@@ -769,8 +769,8 @@ class ConcreteInteractionDiagram:
 
             # Return the result if the iteration has reached the convergence
             if abs(Pn2 - Pn_target) < tol:
-                Pn2, Mnx2, Mny2, eps_t = self.compute_Pn_Mn(c2, alpha)
-                return Pn2, Mnx2, Mny2, eps_t, c2
+                Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps = self.compute_Pn_Mn(c2, alpha)
+                return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, c2
 
             # To prevent c3 from being out of range (less than 0, impossible),
             # bisection method is being used by averaging c_min=0 and c2
@@ -789,8 +789,8 @@ class ConcreteInteractionDiagram:
             c2 = c3
 
         # Return the result from the best estimate if not convergence
-        Pn2, Mnx2, Mny2, eps_t = self.compute_Pn_Mn(best_c, alpha)
-        return Pn2, Mnx2, Mny2, eps_t, best_c
+        Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps = self.compute_Pn_Mn(best_c, alpha)
+        return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, best_c
 
     def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
         """
@@ -1185,7 +1185,7 @@ class ConcreteInteractionDiagram:
 
             with multiprocessing.Pool(processes=16) as pool:
                 # Map the function to the inputs and get results in order
-                for Pn, Mnx, Mny, eps_t, alpha, theta, phi, c in pool.starmap(self.find_Mx_My_at_P, [(Pn_target, alpha) for alpha in alphas]):
+                for Pn, Mnx, Mny, eps_t, alpha, theta, phi, Pc, Pcr, Ps, c in pool.starmap(self.find_Mx_My_at_P, [(Pn_target, alpha) for alpha in alphas]):
                     phiPn = sni.compute_phiPn(phi, Pn, phiPn_max)
                     phiMnx = phi * Mnx
                     phiMny = phi * Mny
@@ -1200,7 +1200,7 @@ class ConcreteInteractionDiagram:
                     phiMnxs.append(phiMnx)
                     phiMnys.append(phiMny)
 
-                    result = [Pn, Mnx, Mny, eps_t, alpha, theta, phi, phiPn, phiMnx, phiMny, c]
+                    result = [Pn, Mnx, Mny, alpha, theta, eps_t, phi, phiPn, phiMnx, phiMny, Pc, Pcr, Ps, c]
                     results.append(result)
 
             nc.capacity.append({
@@ -1217,7 +1217,7 @@ class ConcreteInteractionDiagram:
             })
 
         # Convert list to dataframe
-        results = pd.DataFrame(results, columns=["Axial (Pn)", "Moment X (Mnx)", "Moment Y (Mny)", "eps_t", "alpha", "theta", "phi", "phiPn", "phiMnx", "phiMny", "N.A Depth (c)"])
+        results = pd.DataFrame(results, columns=["Axial (Pn)", "Moment X (Mnx)", "Moment Y (Mny)", "alpha", "theta", "eps_t", "phi", "phiPn", "phiMnx", "phiMny", "Pc", "Pcr", "Ps", "N.A Depth (c)"])
 
         return nc, rc, results
 
