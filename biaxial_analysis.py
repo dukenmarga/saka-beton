@@ -1256,7 +1256,7 @@ class ConcreteInteractionDiagram:
         self._rebar['x_norm'] = self._rebar['x'] - x
         self._rebar['y_norm'] = self._rebar['y'] - y
 
-def run(solution: ConcreteInteractionDiagram):
+def run(solution: ConcreteInteractionDiagram, output: bool = True, output_file: str = "output.tsv"):
     now = dt.datetime.now()
 
     solution.preanalysis()
@@ -1294,6 +1294,10 @@ def run(solution: ConcreteInteractionDiagram):
     # Plot MM
     plot.plot_MM(nominalCapacity)
     print(f"Interpolation and plotting time:\t{dt.datetime.now() - now}")
-    results.to_csv('data_output.txt', sep='\t', index=False)
+
+    # Save results
+    if output:
+        results.to_csv(output_file, sep='\t', index=False)
 
     plot.show()
+    return results
