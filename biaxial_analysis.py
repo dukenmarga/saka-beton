@@ -60,9 +60,9 @@ class ConcreteInteractionDiagram:
     def check_clear_concrete_cover(self):
         # Group concrete boundary into edges
         concrete_edges: list[LineString] = []
-        for i, p1 in enumerate(self.concrete_boundary[['x', 'y']].values):
+        for i, p1 in enumerate(self.concrete_boundary[['x', 'y']].to_numpy(copy=True)):
             j = (i + 1) % len(self._concrete_boundary)
-            p2 = self.concrete_boundary.iloc[j].values
+            p2 = self.concrete_boundary.iloc[j].to_numpy(copy=True)
             edge = LineString([(p1[0], p1[1]), (p2[0], p2[1])])
             concrete_edges.append(edge)
 
@@ -90,7 +90,7 @@ class ConcreteInteractionDiagram:
         # But, for stability & convergence reasons, we need to redefine the "correct" origin of the concrete boundary.
         # We will be using the geometric centroid of the concrete boundary as the new origin.
         # Other method is by using plastic centroid (not used here).
-        XO, YO = self.compute_centroid(self.concrete_boundary[['x', 'y']].values)
+        XO, YO = self.compute_centroid(self.concrete_boundary[['x', 'y']].to_numpy(copy=True))
 
         # Transform concrete and rebar coordinates relative to
         # the new origin
@@ -231,7 +231,7 @@ class ConcreteInteractionDiagram:
         # Map concrete boundary from global to local coordinate
         # (relative to neutral axis).
         # Local origin O' is set to the midline of the neutral axis
-        concrete_boundary_local = geometry.map_to_local(concrete_boundary[['x', 'y']].values, XO, YO, x_na, y_na, na_line)
+        concrete_boundary_local = geometry.map_to_local(concrete_boundary[['x', 'y']].to_numpy(copy=True), XO, YO, x_na, y_na, na_line)
 
         # Get Xe, Ye: the farthest point on the compression side.
         # tens_node: farthest node on tension side (not always true, but it is the least value)
@@ -287,7 +287,7 @@ class ConcreteInteractionDiagram:
         Check if the boundary is closed.
         If not, close it
         """
-        if not self.first_and_last_node_same(self.concrete_boundary[['x', 'y']].values):
+        if not self.first_and_last_node_same(self.concrete_boundary[['x', 'y']].to_numpy(copy=True)):
             first_point = self.concrete_boundary.loc[[0]]
             self._concrete_boundary = pd.concat([self.concrete_boundary, first_point], axis=0, ignore_index=True)
 
@@ -420,7 +420,7 @@ class ConcreteInteractionDiagram:
 
         # Remap rebar coordinates in the rotated coordinate system (Neutral Axis) using new O'.
         rebar = copy.copy(self.rebar)
-        rebar_local = geometry.map_to_local(rebar[['x', 'y']].values, XO, YO, Xa, Ya, na_line)
+        rebar_local = geometry.map_to_local(rebar[['x', 'y']].to_numpy(copy=True), XO, YO, Xa, Ya, na_line)
         rebar_local_pd = pd.DataFrame(rebar_local, columns=['x', 'y'])
 
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
@@ -429,7 +429,7 @@ class ConcreteInteractionDiagram:
         if c > self.h * self.cmax_amplifier:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
-            rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
+            rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].to_numpy(copy=True), c)
         # Concat strain (relative to Neutral Axis line)
         rebar['strain'] = rebar_strain_local
 
@@ -456,13 +456,13 @@ class ConcreteInteractionDiagram:
 
         # Rebar force: Fs = As * fs
         # As * fs (mm2 * MPa / 1000 -> KN)
-        rebar_As_fs = rebar[['fs']].values * rebar[['As']].values / 1000
+        rebar_As_fs = rebar[['fs']].to_numpy(copy=True) * rebar[['As']].to_numpy(copy=True) / 1000
         rebar['As_fs'] = rebar_As_fs
 
         # Concrete force at rebar position (to correct hole made by rebar)
         # Fci = 0.85*fci * As
         # fci * As (MPa * mm2 / 1000 -> KN)
-        rebar_As_fci = 0.85*rebar[['fci']].values * rebar[['As']].values / 1000
+        rebar_As_fci = 0.85*rebar[['fci']].to_numpy(copy=True) * rebar[['As']].to_numpy(copy=True) / 1000
         rebar['As_fci'] = rebar_As_fci
 
         #############
@@ -528,7 +528,7 @@ class ConcreteInteractionDiagram:
 
         # Remap rebar coordinates in the rotated coordinate system (Neutral Axis) using new O'.
         rebar = copy.copy(self.rebar)
-        rebar_local = geometry.map_to_local(rebar[['x', 'y']].values, XO, YO, Xa, Ya, na_line)
+        rebar_local = geometry.map_to_local(rebar[['x', 'y']].to_numpy(copy=True), XO, YO, Xa, Ya, na_line)
         rebar_local_pd = pd.DataFrame(rebar_local, columns=['x', 'y'])
 
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
@@ -537,7 +537,7 @@ class ConcreteInteractionDiagram:
         if c > self.h * self.cmax_amplifier:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
-            rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
+            rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].to_numpy(copy=True), c)
         # Concat strain (relative to Neutral Axis line)
         rebar['strain'] = rebar_strain_local
 
@@ -564,13 +564,13 @@ class ConcreteInteractionDiagram:
 
         # Rebar force: Fs = As * fs
         # As * fs (mm2 * MPa / 1000 -> KN)
-        rebar_As_fs = rebar[['fs']].values * rebar[['As']].values / 1000
+        rebar_As_fs = rebar[['fs']].to_numpy(copy=True) * rebar[['As']].to_numpy(copy=True) / 1000
         rebar['As_fs'] = rebar_As_fs
 
         # Concrete force at rebar position (to correct hole made by rebar)
         # Fci = 0.85*fci * As
         # fci * As (MPa * mm2 / 1000 -> KN)
-        rebar_As_fci = 0.85*rebar[['fci']].values * rebar[['As']].values / 1000
+        rebar_As_fci = 0.85*rebar[['fci']].to_numpy(copy=True) * rebar[['As']].to_numpy(copy=True) / 1000
         rebar['As_fci'] = rebar_As_fci
 
         #############
@@ -583,11 +583,11 @@ class ConcreteInteractionDiagram:
 
         # Total nominal concrete moment capacity about global X-axis
         # As * fci * Ysi -> KN * mm / 1e6 = KN.m
-        sum_As_fci_Ysi = np.sum(rebar[['As_fci']].values * rebar[['y']].values / 1e3)
+        sum_As_fci_Ysi = np.sum(rebar[['As_fci']].to_numpy(copy=True) * rebar[['y']].to_numpy(copy=True) / 1e3)
 
         # Total nominal concrete moment capacity about global Y-axis
         # As * fci * Xsi -> KN * mm / 1e6 = KN.m
-        sum_As_fci_Xsi = np.sum(rebar[['As_fci']].values * rebar[['x']].values / 1e3)
+        sum_As_fci_Xsi = np.sum(rebar[['As_fci']].to_numpy(copy=True) * rebar[['x']].to_numpy(copy=True) / 1e3)
 
         # Total nominal rebar capacity
         # As * fs -> KN
@@ -595,11 +595,11 @@ class ConcreteInteractionDiagram:
 
         # Total nominal rebar moment capacity about global X-axis 
         # As * fs * Ysi -> KN * mm / 1e6 = KN.m
-        sum_As_fs_Ysi = np.sum(rebar[['As_fs']].values * rebar[['y']].values / 1e3)
+        sum_As_fs_Ysi = np.sum(rebar[['As_fs']].to_numpy(copy=True) * rebar[['y']].to_numpy(copy=True) / 1e3)
 
         # Total nominal rebar moment capacity about global Y-axis
         # As * fs * Xsi -> KN * mm / 1e6 = KN.m
-        sum_As_fs_Xsi = np.sum(rebar[['As_fs']].values * rebar[['x']].values / 1e3)
+        sum_As_fs_Xsi = np.sum(rebar[['As_fs']].to_numpy(copy=True) * rebar[['x']].to_numpy(copy=True) / 1e3)
 
         # Total nominal capacity
         # Pn: Nominal axial capacity
@@ -613,7 +613,7 @@ class ConcreteInteractionDiagram:
 
         # Get strain of the most tensile rebar.
         # Absolute value of strain.
-        eps_t = abs(min(rebar[['strain']].values)[0])
+        eps_t = abs(min(rebar[['strain']].to_numpy(copy=True))[0])
 
         # Return nominal capacity based on selected alpha and h,
         # and strain of the most tensile rebar
@@ -697,7 +697,7 @@ class ConcreteInteractionDiagram:
         concrete_boundary = copy.copy(self.concrete_boundary)
 
         # Make a polygon from the concrete boundary
-        concrete_polygon = Polygon(concrete_boundary[['x', 'y']].values)
+        concrete_polygon = Polygon(concrete_boundary[['x', 'y']].to_numpy(copy=True))
 
         # If h_comp beyond the section height, we return the whole concrete shape
         if h_comp >= self.h:
@@ -1096,8 +1096,8 @@ class ConcreteInteractionDiagram:
         """
         fc_ = self.material.fc_
         fy = self.material.fy
-        concrete_area = geometry.calculate_concrete_area(self.concrete_boundary[['x', 'y']].values)
-        rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].values))
+        concrete_area = geometry.calculate_concrete_area(self.concrete_boundary[['x', 'y']].to_numpy(copy=True))
+        rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].to_numpy(copy=True)))
 
         return (0.85*fc_*(concrete_area-rebar_area) + fy*rebar_area) / 1e3
 
@@ -1124,7 +1124,7 @@ class ConcreteInteractionDiagram:
         Calculate maximum concrete tensile strength.
         The value will be in negative.
         """
-        rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].values))
+        rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].to_numpy(copy=True)))
         Pn_max = self.material.fy * rebar_area / 1e3
         return -Pn_max
 
