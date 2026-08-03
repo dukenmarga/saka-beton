@@ -52,6 +52,8 @@ class ConcreteInteractionDiagram:
         self.material = Material(fc_, fy, fsu, epsilon_0, epsilon_u, gamma, Es, eps_sh, eps_su)
         self.sni = SNI_2847_2019(transverse)
 
+        self.cmax_amplifier = 10
+
         # Define ultimate loads
         self.loads = loads
 
@@ -132,7 +134,8 @@ class ConcreteInteractionDiagram:
             maxiter=max_iter
         )
         c = float(d)
-        return self.compute_Pn_Mn(c, alpha), c
+        Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps = self.compute_Pn_Mn(c, alpha)
+        return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, c
 
     def compute_centroid(self, points: np.ndarray):
         """
@@ -267,7 +270,7 @@ class ConcreteInteractionDiagram:
             c: depth of compressed concrete from neutral axis
             epsilon_u: ultimate strain of concrete (usually 0.003)
         """
-        # c zero means full compression
+        # c zero means full tension
         if c == 0:
             return -self.material.epsilon_u
 
@@ -358,12 +361,17 @@ class ConcreteInteractionDiagram:
         c_min = 0
         # c_max is the maximum possibility of neutral axis distance from the extreme of compression fibre.
         # Theoritically c_max is unlimited if we are at full compression.
-        # But, there is a point where the concrete is assumed to be fully compressed.
-        # The starting point is where c_max is equal to h/beta1. Beyond this point, we assume
-        # the concrete is fully compressed.
-        # So c_max theoritically can be h/beta1.
-        # We add 1% to make sure we are not at the boundary.
-        c_max = h / self.beta1 * 1.01
+        # But, we need to determine a point where the concrete and rebar are assumed to be fully compressed.
+        # - For concrete: the starting point is where c is equal to h/beta1.
+        #   Beyond this point, we assume the concrete is fully compressed.
+        #   It will be automatically calculated since concrete compression area is
+        #   limited to Ac if c > h/beta1.
+        # - For rebar: the starting point is more flexible than concrete.
+        #   We can start at c = h/beta1 (where concrete is fully compressed).
+        #   But, we can also stretch this limit (for example after amplifying h by cmax_amplifier).
+        #   This way, we can get a more accurate and granular result of rebar stress and force,
+        #   before we assume the rebar is fully compressed.
+        c_max = h * self.cmax_amplifier
 
         Pn, Mnx, Mny, eps_t, Pc, Pcr, Ps, c = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
 
@@ -418,7 +426,7 @@ class ConcreteInteractionDiagram:
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
         # We use c, since it is the location of the neutral axis.
         # For full compression, we return the ultimate concrete strain
-        if c >= self.h/self.beta1:
+        if c > self.h * self.cmax_amplifier:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
             rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
@@ -526,7 +534,7 @@ class ConcreteInteractionDiagram:
         # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
         # We use c, since it is the location of the neutral axis.
         # For full compression, we return the ultimate concrete strain
-        if c >= self.h/self.beta1:
+        if c > self.h * self.cmax_amplifier:
             rebar_strain_local = self.calculate_strain_full_compression()
         else:
             rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].values, c)
@@ -729,15 +737,11 @@ class ConcreteInteractionDiagram:
         self.Pn_target = Pn_target
         Pn1 = self.compute_Pn(c1, alpha)
 
-        # Increase tolerance if Pn_target is close to Po.
-        if Pn_target > 0.95*self.Po:
-            tol = 3
-
         # Maximum number of iterations
         max_iter = 100
 
         # Initialize values to track best c
-        best_diff = 10000
+        best_diff = 100_000
         best_c = 0
 
         # Iterate until convergence
@@ -755,11 +759,11 @@ class ConcreteInteractionDiagram:
                 best_c = c2
 
             # Avoid division by zero.
-            # But if still true, reset and swap values
-            # (opposite of initial value before looping)
+            # If still true, usually the c1 and c2 are beyond to c_max
+            # that cause Pn1 ~= Pn2.
             if abs(Pn2 - Pn1) < 1e-6:
-                c1 = c_max
-                c2 = c_min
+                c1 = 0.9 * self.h / self.beta1
+                c2 = self.h / self.beta1
                 Pn1 = self.compute_Pn(c1, alpha)
                 continue
 
@@ -1151,6 +1155,8 @@ class ConcreteInteractionDiagram:
 
         # Supress scientific notation
         np.set_printoptions(suppress=True)
+
+        # Full compression and full tension capacity
         Po = self.Po
         Pn_min = self.Pt_max()
 
