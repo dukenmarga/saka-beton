@@ -447,7 +447,7 @@ class ConcreteInteractionDiagram:
         rebar['fs'] = rebar_fs
 
         # Calculate concrete stress at reinforcement rebar (to correct hole made by rebar)
-        rebar_fci = self.material.concrete_stress_strain_ufunc(rebar[['strain']])
+        rebar_fci = self.material.concrete_stress_strain_rigid_perfectly_plastic(rebar[['strain']])
         rebar['fci'] = rebar_fci
 
         #########
@@ -555,7 +555,7 @@ class ConcreteInteractionDiagram:
         rebar['fs'] = rebar_fs
 
         # Calculate concrete stress at reinforcement rebar (to correct hole made by rebar)
-        rebar_fci = self.material.concrete_stress_strain_ufunc(rebar[['strain']])
+        rebar_fci = self.material.concrete_stress_strain_rigid_perfectly_plastic(rebar[['strain']])
         rebar['fci'] = rebar_fci
 
         #########

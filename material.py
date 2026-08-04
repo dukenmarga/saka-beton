@@ -62,6 +62,10 @@ class Material:
             return fc_ * (A - B)
         return fc_
 
+    def concrete_stress_strain_rigid_perfectly_plastic_vector(self, eps_c: float):
+        if eps_c <= 0:
+            return 0
+        return self.fc_
 
     def concrete_stress_strain(self, eps_c: float):
         """
@@ -71,6 +75,9 @@ class Material:
 
     def concrete_stress_strain_ufunc(self, eps_c: float):
         return np.vectorize(self.concrete_stress_strain, otypes=[float])(eps_c)
+
+    def concrete_stress_strain_rigid_perfectly_plastic(self, eps_c: float):
+        return np.vectorize(self.concrete_stress_strain_rigid_perfectly_plastic_vector, otypes=[float])(eps_c)
 
     def steel_rebar_stress_strain(self, eps_s: float):
         """
