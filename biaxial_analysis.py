@@ -1158,7 +1158,7 @@ class ConcreteInteractionDiagram:
 
         # Full compression and full tension capacity
         Po = self.Po
-        Pn_min = self.Pt_max()
+        Pn_min = self.Pt_max() + 0.1
 
         # Nominal capacity and reduced capacity
         nc = Capacity(False, [])
