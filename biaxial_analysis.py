@@ -265,22 +265,21 @@ class ConcreteInteractionDiagram:
 
     def calculate_strain(self, rebar_y: np.ndarray, c: float):
         """
-        Calculate strain for each rebar.
+        Calculate strain (epsilon_s) for each rebar, linearly distributed from Xe, Ye.
+        It uses c (neutral axis) to determine the strain from the strain compatibility.
             rebar_y: y coordinate of rebar (local coordinate system)
             c: depth of compressed concrete from neutral axis
             epsilon_u: ultimate strain of concrete (usually 0.003)
         """
         # c zero means full tension
         if c == 0:
-            return -self.material.epsilon_u
+            return -self.material.fy / self.material.Es
+
+        # c > h * cmax_amplifier means full compression
+        if c > self.h * self.cmax_amplifier:
+            return self.material.epsilon_u
 
         return rebar_y / c * self.material.epsilon_u
-
-    def calculate_strain_full_compression(self):
-        """
-        Calculate strain in full compression.
-        """
-        return self.material.epsilon_u
 
     def close_boundary_loop(self):
         """
@@ -423,13 +422,8 @@ class ConcreteInteractionDiagram:
         rebar_local = geometry.map_to_local(rebar[['x', 'y']].to_numpy(copy=True), XO, YO, Xa, Ya, na_line)
         rebar_local_pd = pd.DataFrame(rebar_local, columns=['x', 'y'])
 
-        # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
-        # We use c, since it is the location of the neutral axis.
-        # For full compression, we return the ultimate concrete strain
-        if c > self.h * self.cmax_amplifier:
-            rebar_strain_local = self.calculate_strain_full_compression()
-        else:
-            rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].to_numpy(copy=True), c)
+        # Get strain (epsilon_s) for each point on the rebar
+        rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].to_numpy(copy=True), c)
         # Concat strain (relative to Neutral Axis line)
         rebar['strain'] = rebar_strain_local
 
@@ -531,13 +525,8 @@ class ConcreteInteractionDiagram:
         rebar_local = geometry.map_to_local(rebar[['x', 'y']].to_numpy(copy=True), XO, YO, Xa, Ya, na_line)
         rebar_local_pd = pd.DataFrame(rebar_local, columns=['x', 'y'])
 
-        # Get strain (epsilon_s) for each point on the rebar, linearly distributed from Xe, Ye.
-        # We use c, since it is the location of the neutral axis.
-        # For full compression, we return the ultimate concrete strain
-        if c > self.h * self.cmax_amplifier:
-            rebar_strain_local = self.calculate_strain_full_compression()
-        else:
-            rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].to_numpy(copy=True), c)
+        # Get strain (epsilon_s) for each point on the rebar
+        rebar_strain_local = self.calculate_strain(rebar_local_pd[['y']].to_numpy(copy=True), c)
         # Concat strain (relative to Neutral Axis line)
         rebar['strain'] = rebar_strain_local
 
