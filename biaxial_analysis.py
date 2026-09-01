@@ -277,7 +277,7 @@ class ConcreteInteractionDiagram:
 
         # c > h * cmax_amplifier means full compression
         if c > self.h * self.cmax_amplifier:
-            return self.material.epsilon_u
+            return self.material.fy / self.material.Es
 
         return rebar_y / c * self.material.epsilon_u
 
