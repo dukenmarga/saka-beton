@@ -43,6 +43,7 @@ class ConcreteInteractionDiagram:
                 "Mux": [0],
                 "Muy": [0],
             },
+            Pns_target: list = None,
         ):
         # Define concrete boundary and rebar coordinates
         self._concrete_boundary = concrete_boundary
@@ -56,6 +57,9 @@ class ConcreteInteractionDiagram:
 
         # Define ultimate loads
         self.loads = loads
+
+        # Define Pn target
+        self.Pns_target = Pns_target
 
     def check_clear_concrete_cover(self):
         # Group concrete boundary into edges
@@ -1153,9 +1157,12 @@ class ConcreteInteractionDiagram:
         nc = Capacity(False, [])
         rc = Capacity(True, [])
 
-        # 25 evenly spaced levels from 1 KN above full tension to Po full compression.
-        number = 25
-        Pns_target = list(np.linspace(Pn_min, Po, number))
+        if self.Pns_target is None:
+            # 25 evenly spaced levels from full tension Pnt to full compression Po.
+            number = 25
+            Pns_target = list(np.linspace(Pn_min, Po, number))
+        else:
+            Pns_target = self.Pns_target
 
         # Before calculating the solution in this zone, we need to determine
         # the maximum allowable axial capacity.
