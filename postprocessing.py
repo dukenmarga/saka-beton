@@ -242,7 +242,7 @@ class Plot:
                 continue
 
             # Plot nominal capacity
-            Pn = result['Pn'][i]
+            Pn = result['Pn'][0]
             Mnx = [*result['Mnx'], result['Mnx'][0]]
             Mny = [*result['Mny'], result['Mny'][0]]
             linestyle = '--' if Pn < 0 else '-'
@@ -251,7 +251,7 @@ class Plot:
             ax.plot(Mnx, Mny, c=colors[i_col], linestyle=linestyle)
 
             # Collect legend
-            legends.append(f'Pn:{result["Pn"][i]:.1f}')
+            legends.append(f'Pn:{result["Pn"][0]:.1f}')
 
         leg = ax.legend(legends, loc='upper right')
         leg.set_draggable(True)
