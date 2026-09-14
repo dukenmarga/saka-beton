@@ -2,6 +2,7 @@ import numpy as np
 import shapely
 import shapely.ops
 from shapely.geometry import LineString, Point, Polygon
+import pandas as pd
 
 def map_to_local(nodes: np.ndarray, x_cen_glob: float, y_cen_glob: float, x_cen_loc: float, y_cen_loc: float, line: LineString):
     """Transform nodes coordinate from global to local,
@@ -73,15 +74,46 @@ def calculate_rebar_area(rebar_dia: np.ndarray):
 def calculate_concrete_area(concrete_boundary: np.ndarray):
     """Calculate concrete area
     """
+    area = calculate_signed_area(concrete_boundary)
+    return abs(area)
+
+def calculate_signed_area(concrete_boundary: np.ndarray):
+    """Calculate signed area
+    """
     n = len(concrete_boundary)
     area = 0
     for i in range(n):
         j = (i + 1) % n
         area += concrete_boundary[i, 0] * concrete_boundary[j, 1]
         area -= concrete_boundary[j, 0] * concrete_boundary[i, 1]
-    area = abs(area) / 2
+    area = area / 2
     return area
 
+def polygon_oritentation(concrete_boundary: np.ndarray):
+    """
+    Check if the polygon is clockwise or counterclockwise using signed area method
+    """
+    area = calculate_signed_area(concrete_boundary)
+    if area < 0:
+        return "clockwise"
+    elif area > 0:
+        return "counterclockwise"
+    else:
+        raise ValueError("Polygon is degenerate")
+
+def make_clockwise(concrete_boundary: pd.DataFrame):
+    concrete_boundary_np = concrete_boundary[['x', 'y']].to_numpy(copy=True)
+    if polygon_oritentation(concrete_boundary_np) == "clockwise":
+        return concrete_boundary
+    else:
+        return concrete_boundary[::-1].reset_index(drop=True)
+
+def make_counterclockwise(concrete_boundary: pd.DataFrame):
+    concrete_boundary_np = concrete_boundary[['x', 'y']].to_numpy(copy=True)
+    if polygon_oritentation(concrete_boundary_np) == "counterclockwise":
+        return concrete_boundary
+    else:
+        return concrete_boundary[::-1].reset_index(drop=True)
 
 def get_compressed_parts(polygon: Polygon, line: LineString, XeYe: tuple[float, float]):
     """
@@ -95,7 +127,7 @@ def get_compressed_parts(polygon: Polygon, line: LineString, XeYe: tuple[float, 
     parts = shapely.ops.split(polygon, line)
 
     # If no compression part is found, return only small square (1x1 unit)
-    if len(parts.geoms) == 1:
+    if len(parts.geoms) <= 1:
         return np.array([[[0, 0],
                          [0, 1],
                          [1, 1],
@@ -145,3 +177,74 @@ def get_compressed_parts(polygon: Polygon, line: LineString, XeYe: tuple[float, 
         compression_parts.append(compression_part)
 
     return compression_parts
+
+def combine(concrete_boundary: pd.DataFrame, openings: list[pd.DataFrame]):
+    """
+    Combine concrete boundary and openings as one polygon
+    """
+    if len(openings) == 0:
+        return concrete_boundary
+
+    combined: pd.DataFrame = pd.DataFrame(columns=['x', 'y'])
+    smallest_distance = 9999999
+    node_at_boundary = 0
+    node_at_opening = 0
+
+    # Connect each opening to the concrete boundary
+    for i, opening in enumerate(openings):
+        # Get the smallest distance between the opening and the concrete boundary
+        for row in opening.itertuples():
+            x = row.x
+            y = row.y
+
+            # Get the distance between the node and the concrete boundary
+            distance = np.sqrt((concrete_boundary['x'] - x)**2 + (concrete_boundary['y'] - y)**2)
+            min_distance = distance.min()
+            min_distance_node_index = distance.argmin()
+
+            # Update the minimum distance and index
+            if min_distance < smallest_distance:
+                smallest_distance = min_distance
+                node_at_boundary = min_distance_node_index
+                node_at_opening = row.Index
+
+        # Shift opening nodes, so that the selected node at opening become the first node in the array
+        # pd.concat([opening.iloc[node_at_opening:], opening.iloc[:node_at_opening]], axis=0, ignore_index=True)
+        opening = pd.concat([opening.iloc[node_at_opening:], opening.iloc[:node_at_opening]]).reset_index(drop=True)
+
+        # Get the node index at boundary
+        node_boundary = int(node_at_boundary)
+
+        # Determine if the increment should be positive or negative
+        x = concrete_boundary['x'].iloc[node_boundary]
+        y1 = concrete_boundary['y'].iloc[node_boundary]
+        y2 = opening['y'].iloc[0]
+        opening_y = opening['y'].iloc[0]
+        increment = y1 > y2
+
+        # Two additional lines are needed to connect concrete boundary and opening,
+        # one is the line from opening, the other is the line from concrete boundary.
+        # But, these 2 lines can' share the same node.
+        # Hence, we will make a small gap between these 2 lines.
+        dx = 0.1
+        if increment:
+            x = x + dx
+            opening_x = opening['x'].iloc[0] + dx
+        else:
+            x = x - dx
+            opening_x = opening['x'].iloc[0] - dx
+
+        # Combine the concrete boundary and openings
+        combined = pd.concat([concrete_boundary[:node_boundary+1], opening], axis=0, ignore_index=True)
+        combined['x'] = combined['x'].astype('float64')
+        combined = pd.concat([combined, pd.DataFrame({'x': [opening_x], 'y': [opening_y]})], axis=0, ignore_index=True)
+        combined = pd.concat([combined, pd.DataFrame({'x': [x], 'y': [y1]})], axis=0, ignore_index=True)
+        combined = pd.concat([combined, concrete_boundary[node_boundary+1:]], axis=0, ignore_index=True)
+
+        # Update concrete boundary
+        concrete_boundary = combined
+
+        # Reset smallest distance
+        smallest_distance = 9999999
+
+    return combined
