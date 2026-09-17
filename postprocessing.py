@@ -75,8 +75,11 @@ class Plot:
         Draw the concrete section
         """
         ax = self.ax_section
-        ax.plot(np.append(solution.concrete_boundary['x_norm'], solution.concrete_boundary['x_norm'][0]),
-                    np.append(solution.concrete_boundary['y_norm'], solution.concrete_boundary['y_norm'][0]), 'k-')
+        ax.plot(np.append(solution._original_concrete_boundary['x_norm'], solution._original_concrete_boundary['x_norm'][0]),
+                    np.append(solution._original_concrete_boundary['y_norm'], solution._original_concrete_boundary['y_norm'][0]), 'k-')
+        for i in range(len(solution.openings)):
+            ax.plot(np.append(solution.openings[i]['x_norm'], solution.openings[i]['x_norm'][0]),
+                        np.append(solution.openings[i]['y_norm'], solution.openings[i]['y_norm'][0]), 'k-')
         for xi, yi, d in zip(solution.rebar['x_norm'], solution.rebar['y_norm'], solution.rebar['diameter']):
             radius = d / 2.0                     # karena Circle butuh radius
             circle = Circle((xi, yi), radius=radius, 
@@ -86,6 +89,7 @@ class Plot:
                             alpha=0.8)
             ax.add_patch(circle)
         ax.set_aspect('equal')
+
 
     def plot3d(self, rc: Capacity):
         """

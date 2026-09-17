@@ -26,8 +26,10 @@ class ConcreteInteractionDiagram:
     Calculate concrete interaction diagram (biaxial analysis)
     """
     def __init__(
-            self, concrete_boundary: pd.DataFrame,
+            self,
+            concrete_boundary: pd.DataFrame,
             rebar: pd.DataFrame,
+            openings: list[pd.DataFrame] = [],
             fc_ = 30, # MPa
             fy = 400, # MPa
             fsu = None, # MPa
@@ -46,8 +48,18 @@ class ConcreteInteractionDiagram:
             Pns_target: list = None,
         ):
         # Define concrete boundary and rebar coordinates
-        self._concrete_boundary = concrete_boundary
         self._rebar = rebar
+        assert isinstance(openings, list), "Openings must be a list of dataframes. Make sure to include bracketing []"
+
+        # Before combining, make sure that the orientation is correct:
+        # - Concrete boundary is clockwise
+        # - Openings are counterclockwise
+        # The orientation is important to be correct to prevent line overlapping when
+        # connecting the nodes
+        self._concrete_boundary = geometry.make_clockwise(concrete_boundary)
+        self._original_concrete_boundary = self._concrete_boundary
+        self._openings = [geometry.make_counterclockwise(opening) for opening in openings]
+        self._concrete_boundary = geometry.combine(self.concrete_boundary, self.openings)
 
         # Define material properties
         self.material = Material(fc_, fy, fsu, epsilon_0, epsilon_u, gamma, Es, eps_sh, eps_su)
@@ -113,6 +125,10 @@ class ConcreteInteractionDiagram:
     @property
     def concrete_boundary(self):
         return self._concrete_boundary
+
+    @property
+    def openings(self):
+        return self._openings
 
     @property
     def rebar(self):
@@ -408,12 +424,12 @@ class ConcreteInteractionDiagram:
         # Construct compression region.
         # Compression region is same as Whitney stress block.
         # In rectangle, this area is equal to Area = c * beta1 * bw
-        compression_parts, na_line = self.construct_concrete_compression_region(c, alpha)
+        compression_parts, na_line = self.construct_area_in_compression_region(c, alpha)
 
         # Calculate Pn for each compressed part
         Pcn = 0
-        for compression_parts in compression_parts:
-            Pcn_part = self.Pcn(compression_parts)
+        for compression_part in compression_parts:
+            Pcn_part = self.Pcn(compression_part)
             Pcn += Pcn_part
 
         # Calculate coordinate O' (Xa, Ya) in global axis
@@ -502,7 +518,7 @@ class ConcreteInteractionDiagram:
         # Construct compression region.
         # Compression region is same as Whitney stress block.
         # In rectangle, this area is equal to Area = c * beta1 * bw
-        compressed_parts, na_line = self.construct_concrete_compression_region(c, alpha)
+        compressed_parts, na_line = self.construct_area_in_compression_region(c, alpha)
 
         # Calculate the centroid of Whitney's compression stress block.
         ecc = self.compute_centroid_from_polygons(compressed_parts)
@@ -612,7 +628,7 @@ class ConcreteInteractionDiagram:
         # and strain of the most tensile rebar
         return Pn, MnX, MnY, eps_t, Pcn, sum_As_fci, sum_As_fs
 
-    def compute_centroid_from_polygons(self, polygons: np.ndarray):
+    def compute_centroid_from_polygons(self, polygons: list[np.ndarray]):
         """
         Compute centroid of polygons.
 
@@ -624,7 +640,10 @@ class ConcreteInteractionDiagram:
         sum_y = 0
         sum_area = 0
         for compressed_part in polygons:
-            x_cen_part, y_cen_part = self.compute_centroid(compressed_part)
+            try:
+                x_cen_part, y_cen_part = self.compute_centroid(compressed_part)
+            except AssertionError:
+                raise AssertionError("compute_centroid_from_polygons: Make sure your concrete and opening boundary are valid and non-intersecting.")
             area = geometry.calculate_concrete_area(compressed_part)
             sum_x += x_cen_part * area
             sum_y += y_cen_part * area
@@ -641,7 +660,7 @@ class ConcreteInteractionDiagram:
         return centroids
 
     @cache
-    def construct_concrete_compression_region(self, c: float, alpha: float = 0):
+    def construct_area_in_compression_region(self, c: float, alpha: float = 0):
         """
         Construct concrete compression region and neutral axis.
         """
@@ -1090,6 +1109,9 @@ class ConcreteInteractionDiagram:
         fc_ = self.material.fc_
         fy = self.material.fy
         concrete_area = geometry.calculate_concrete_area(self.concrete_boundary[['x', 'y']].to_numpy(copy=True))
+        for opening in self.openings:
+            opening_area = geometry.calculate_concrete_area(opening[['x', 'y']].to_numpy(copy=True))
+            concrete_area -= opening_area
         rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].to_numpy(copy=True)))
 
         return (0.85*fc_*(concrete_area-rebar_area) + fy*rebar_area) / 1e3
@@ -1233,6 +1255,13 @@ class ConcreteInteractionDiagram:
         # Translate concrete boundary relative to the origin
         self._concrete_boundary['x'] = self._concrete_boundary['x'] - XO
         self._concrete_boundary['y'] = self._concrete_boundary['y'] - YO
+        self._original_concrete_boundary['x'] = self._original_concrete_boundary['x'] - XO
+        self._original_concrete_boundary['y'] = self._original_concrete_boundary['y'] - YO
+
+        # Translate concrete opening relative to the origin
+        for i, _ in enumerate(self.openings):
+            self._openings[i]['x'] = self._openings[i]['x'] - XO
+            self._openings[i]['y'] = self._openings[i]['y'] - YO
 
         # Translate concrete rebar relative to the origin
         self._rebar['x'] = self._rebar['x'] - XO
@@ -1245,8 +1274,17 @@ class ConcreteInteractionDiagram:
 
     def transform_to_O(self):
         x, y = self.find_lowest_left_node()
+
+        # Translate concrete boundary relative to the origin
         self._concrete_boundary['x_norm'] = self._concrete_boundary['x'] - x
         self._concrete_boundary['y_norm'] = self._concrete_boundary['y'] - y
+        self._original_concrete_boundary['x_norm'] = self._original_concrete_boundary['x'] - x
+        self._original_concrete_boundary['y_norm'] = self._original_concrete_boundary['y'] - y
+
+        # Translate concrete opening relative to the origin
+        for i in range(len(self.openings)):
+            self._openings[i]['x_norm'] = self._openings[i]['x'] - x
+            self._openings[i]['y_norm'] = self._openings[i]['y'] - y
 
         # Translate concrete rebar relative to the origin
         self._rebar['x_norm'] = self._rebar['x'] - x
