@@ -11,10 +11,10 @@ class Section:
             {"x": [0, width, width, 0, 0], "y": [0, 0, height, height, 0]}
         )
 
-    def create_circle(self, diameter: float):
-        theta = np.linspace(0, 2 * np.pi, 30, endpoint=False)
-        x = diameter / 2 * np.cos(theta)
-        y = diameter / 2 * np.sin(theta)
+    def create_circle(self, diameter: float, x: float = 0, y: float = 0, n: int = 30):
+        theta = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        x = diameter / 2 * np.cos(theta) + x
+        y = diameter / 2 * np.sin(theta) + y
 
         return pd.DataFrame({"x": x, "y": y})
 
