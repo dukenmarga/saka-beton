@@ -1182,9 +1182,8 @@ class ConcreteInteractionDiagram:
         if self.Pns_target is None:
             # 25 evenly spaced levels from full tension Pnt to full compression Po.
             number = 25
-            Pns_target = list(np.linspace(Pn_min, Po, number))
-        else:
-            Pns_target = self.Pns_target
+            self.Pns_target = list(np.linspace(Pn_min, Po, number))
+        Pns_target = self.Pns_target
 
         # Before calculating the solution in this zone, we need to determine
         # the maximum allowable axial capacity.
