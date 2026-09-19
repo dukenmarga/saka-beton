@@ -226,7 +226,7 @@ def combine(concrete_boundary: pd.DataFrame, openings: list[pd.DataFrame]):
         # one is the line from opening, the other is the line from concrete boundary.
         # But, these 2 lines can' share the same node.
         # Hence, we will make a small gap between these 2 lines.
-        dx = 0.1
+        dx = 0.01
         if increment:
             x = x + dx
             opening_x = opening['x'].iloc[0] + dx
