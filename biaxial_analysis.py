@@ -1108,7 +1108,7 @@ class ConcreteInteractionDiagram:
         """
         fc_ = self.material.fc_
         fy = self.material.fy
-        concrete_area = geometry.calculate_concrete_area(self.concrete_boundary[['x', 'y']].to_numpy(copy=True))
+        concrete_area = geometry.calculate_concrete_area(self._original_concrete_boundary[['x', 'y']].to_numpy(copy=True))
         for opening in self.openings:
             opening_area = geometry.calculate_concrete_area(opening[['x', 'y']].to_numpy(copy=True))
             concrete_area -= opening_area
