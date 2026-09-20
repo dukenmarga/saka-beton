@@ -57,7 +57,7 @@ class ConcreteInteractionDiagram:
         # The orientation is important to be correct to prevent line overlapping when
         # connecting the nodes
         self._concrete_boundary = geometry.make_clockwise(concrete_boundary)
-        self._original_concrete_boundary = self._concrete_boundary
+        self._original_concrete_boundary = copy.copy(self._concrete_boundary)
         self._openings = [geometry.make_counterclockwise(opening) for opening in openings]
         self._concrete_boundary = geometry.combine(self.concrete_boundary, self.openings)
 
