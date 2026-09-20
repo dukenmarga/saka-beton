@@ -392,7 +392,7 @@ class ConcreteInteractionDiagram:
         #   before we assume the rebar is fully compressed.
         c_max = h * self.cmax_amplifier
 
-        Pn, Mnx, Mny, eps_t, Pc, Pcr, Ps, c = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
+        Pn, Mnx, Mny, eps_t, Pc, Pcr, Ps, c, iteration = self._find_Mnx_Mny_at_Pn(P, alpha, c_min, c_max)
 
         # Calculate theta, the angle between Mnx and Mny
         theta = math.atan2(Mny, Mnx) * 180 / math.pi
@@ -786,7 +786,7 @@ class ConcreteInteractionDiagram:
             # Return the result if the iteration has reached the convergence
             if abs(Pn2 - Pn_target) < tol:
                 Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps = self.compute_Pn_Mn(c2, alpha)
-                return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, c2
+                return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, c2, iter_count
 
             # To prevent c3 from being out of range (less than 0, impossible),
             # bisection method is being used by averaging c_min=0 and c2
@@ -808,7 +808,7 @@ class ConcreteInteractionDiagram:
         import sys
         print(f"Secant method did not converge Pn-target: {Pn_target}, Pn-best: {Pn2:.2f}, alpha: {alpha}", file=sys.stderr, flush=True)
         Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps = self.compute_Pn_Mn(best_c, alpha)
-        return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, best_c
+        return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, best_c, iter_count
 
     def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
         """
@@ -1207,10 +1207,11 @@ class ConcreteInteractionDiagram:
             phiPns = []
             phiMnxs = []
             phiMnys = []
+            iterations = []
 
             with multiprocessing.Pool(processes=16) as pool:
                 # Map the function to the inputs and get results in order
-                for Pn, Mnx, Mny, eps_t, alpha, theta, phi, Pc, Pcr, Ps, c in pool.starmap(self.find_Mx_My_at_P, [(Pn_target, alpha) for alpha in alphas]):
+                for Pn, Mnx, Mny, eps_t, alpha, theta, phi, Pc, Pcr, Ps, c, iteration in pool.starmap(self.find_Mx_My_at_P, [(Pn_target, alpha) for alpha in alphas]):
                     phiPn = sni.compute_phiPn(phi, Pn, phiPn_max)
                     phiMnx = phi * Mnx
                     phiMny = phi * Mny
@@ -1224,8 +1225,9 @@ class ConcreteInteractionDiagram:
                     phiPns.append(phiPn)
                     phiMnxs.append(phiMnx)
                     phiMnys.append(phiMny)
+                    iterations.append(iteration)
 
-                    result = [Pn, Mnx, Mny, alpha, theta, eps_t, phi, phiPn, phiMnx, phiMny, Pc, Pcr, Ps, c]
+                    result = [Pn, Mnx, Mny, alpha, theta, eps_t, phi, phiPn, phiMnx, phiMny, Pc, Pcr, Ps, c, iteration]
                     results.append(result)
 
             nc.capacity.append({
@@ -1242,7 +1244,7 @@ class ConcreteInteractionDiagram:
             })
 
         # Convert list to dataframe
-        results = pd.DataFrame(results, columns=["Axial (Pn)", "Moment X (Mnx)", "Moment Y (Mny)", "alpha", "theta", "eps_t", "phi", "phiPn", "phiMnx", "phiMny", "Pc", "Pcr", "Ps", "N.A Depth (c)"])
+        results = pd.DataFrame(results, columns=["Axial (Pn)", "Moment X (Mnx)", "Moment Y (Mny)", "alpha", "theta", "eps_t", "phi", "phiPn", "phiMnx", "phiMny", "Pc", "Pcr", "Ps", "N.A Depth (c)", "Iteration"])
 
         return nc, rc, results
 
