@@ -6,7 +6,7 @@ import shapely
 import math
 import pygmsh
 import copy
-from scipy.optimize import brentq
+from scipy.optimize import brentq, bisect
 from shapely import LineString, Polygon, Point
 from shapely.affinity import rotate
 from typing import Literal
@@ -46,6 +46,7 @@ class ConcreteInteractionDiagram:
                 "Muy": [0],
             },
             Pns_target: list = None,
+            method: Literal["brent", "bisect", "secant"] = "secant",
         ):
         # Define concrete boundary and rebar coordinates
         self._rebar = rebar
@@ -72,6 +73,9 @@ class ConcreteInteractionDiagram:
 
         # Define Pn target
         self.Pns_target = Pns_target
+
+        # Define method
+        self.method = method
 
     def check_clear_concrete_cover(self):
         # Group concrete boundary into edges
@@ -136,26 +140,49 @@ class ConcreteInteractionDiagram:
 
     def _brent_method(self, Pn_target: float, alpha: float = 0,
                       c_min: float = -100, c_max: float = 100,
-                      tol: float = 1e-1, max_iter: float = 100):
+                      tol: float = 1e-2, max_iter: float = 100):
         """
         Find combination of Mnx and Mny, such that Pn is close to Pn_target
             by utilizing Brent method.
         """
         self.Pn_target = Pn_target
         d, r = brentq(
-            f=self.compute_Pn_brent,
+            f=self.compute_Pn_minus_Pn_target,
             a=c_min,
             b=c_max,
-            args=(alpha, Pn_target),
+            args=(alpha, Pn_target, tol),
             full_output=True,
             disp=False,
-            xtol=tol,
-            rtol=tol,
+            xtol=1e-4,
+            rtol=1e-4,
             maxiter=max_iter
         )
         c = float(d)
         Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps = self.compute_Pn_Mn(c, alpha)
-        return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, c
+        return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, c, r.iterations
+
+    def _bisect_method(self, Pn_target: float, alpha: float = 0,
+                      c_min: float = -100, c_max: float = 100,
+                      tol: float = 1e-2, max_iter: float = 100):
+        """
+        Find combination of Mnx and Mny, such that Pn is close to Pn_target
+            by utilizing Bisection method.
+        """
+        self.Pn_target = Pn_target
+        d, r = bisect(
+            f=self.compute_Pn_minus_Pn_target,
+            a=c_min,
+            b=c_max,
+            args=(alpha, Pn_target, tol),
+            full_output=True,
+            disp=False,
+            xtol=1e-4,
+            rtol=1e-4,
+            maxiter=max_iter
+        )
+        c = float(d)
+        Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps = self.compute_Pn_Mn(c, alpha)
+        return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, c, r.iterations
 
     def compute_centroid(self, points: np.ndarray):
         """
@@ -349,13 +376,15 @@ class ConcreteInteractionDiagram:
         
         return min_x, min_y
 
-    def _find_Mnx_Mny_at_Pn(self, Pn_target, alpha, c_min, c_max, method="secant", tol=1e-1, max_iter=100):
+    def _find_Mnx_Mny_at_Pn(self, Pn_target, alpha, c_min, c_max, tol=1e-2, max_iter=100):
         """
         Find Mnx and Mny such that Pn is close to Pn_target
         """
+        method = self.method
         if method == "brent":
-            tol = min(1e-4, tol)
             return self._brent_method(Pn_target, alpha, c_min, c_max, tol, max_iter)
+        if method == "bisect":
+            return self._bisect_method(Pn_target, alpha, c_min, c_max, tol, max_iter)
         if method == "secant":
             return self._secant_method(Pn_target, alpha, c_min, c_max, tol, max_iter)
         raise ValueError(f"Unknown method: {method}")
@@ -405,10 +434,12 @@ class ConcreteInteractionDiagram:
         sni = self.sni
         phi = sni.compute_phi(reduction_type="moment_axial", eps_t=eps_t, eps_y=eps_y)
 
-        return Pn, Mnx, Mny, eps_t, alpha, theta, phi, Pc, Pcr, Ps,c
+        return Pn, Mnx, Mny, eps_t, alpha, theta, phi, Pc, Pcr, Ps, c, iteration
 
-    def compute_Pn_brent(self, c: float = 10, alpha: float = 0, Pn_target: float = 0):
+    def compute_Pn_minus_Pn_target(self, c: float = 10, alpha: float = 0, Pn_target: float = 0, tol: float = 1e-2):
         Pn = self.compute_Pn(c, alpha)
+        if abs(Pn - Pn_target) < tol:
+            return 0
         return Pn - Pn_target
 
     @cache
@@ -737,7 +768,7 @@ class ConcreteInteractionDiagram:
 
     def _secant_method(self, Pn_target: float, alpha: float = 0,
                       c_min: float = -100, c_max: float = 100,
-                      tol: float = 1e-1, max_iter: float = 100):
+                      tol: float = 1e-2, max_iter: float = 100):
         """
         Find combination of Mnx and Mny, such that Pn is close to Pn_target
             by utilizing secant method.
