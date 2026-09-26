@@ -20,7 +20,7 @@ def example2():
         Es = 200000,
         eps_sh = 0.015,
         eps_su = 0.05,
-        transverse="ties",
+        transverse="spiral",
         loads = {
             "Pu": [1500, 1100, -300],
             "Mux": [120, 210, 200],
