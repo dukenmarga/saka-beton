@@ -47,6 +47,7 @@ class ConcreteInteractionDiagram:
             },
             Pns_target: list = None,
             method: Literal["brent", "bisect", "secant"] = "secant",
+            tol: float = 1e-2,
         ):
         # Define concrete boundary and rebar coordinates
         self._rebar = rebar
@@ -76,6 +77,9 @@ class ConcreteInteractionDiagram:
 
         # Define method
         self.method = method
+
+        # Define tolerance
+        self.tol = tol
 
     def check_clear_concrete_cover(self):
         # Group concrete boundary into edges
@@ -153,8 +157,7 @@ class ConcreteInteractionDiagram:
             args=(alpha, Pn_target, tol),
             full_output=True,
             disp=False,
-            xtol=1e-4,
-            rtol=1e-4,
+            xtol=tol,
             maxiter=max_iter
         )
         c = float(d)
@@ -176,8 +179,7 @@ class ConcreteInteractionDiagram:
             args=(alpha, Pn_target, tol),
             full_output=True,
             disp=False,
-            xtol=1e-4,
-            rtol=1e-4,
+            xtol=tol,
             maxiter=max_iter
         )
         c = float(d)
@@ -376,11 +378,12 @@ class ConcreteInteractionDiagram:
         
         return min_x, min_y
 
-    def _find_Mnx_Mny_at_Pn(self, Pn_target, alpha, c_min, c_max, tol=1e-2, max_iter=100):
+    def _find_Mnx_Mny_at_Pn(self, Pn_target, alpha, c_min, c_max, max_iter=100):
         """
         Find Mnx and Mny such that Pn is close to Pn_target
         """
         method = self.method
+        tol = self.tol
         if method == "brent":
             return self._brent_method(Pn_target, alpha, c_min, c_max, tol, max_iter)
         if method == "bisect":
@@ -438,8 +441,6 @@ class ConcreteInteractionDiagram:
 
     def compute_Pn_minus_Pn_target(self, c: float = 10, alpha: float = 0, Pn_target: float = 0, tol: float = 1e-2):
         Pn = self.compute_Pn(c, alpha)
-        if abs(Pn - Pn_target) < tol:
-            return 0
         return Pn - Pn_target
 
     @cache
