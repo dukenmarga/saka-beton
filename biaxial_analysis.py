@@ -837,8 +837,8 @@ class ConcreteInteractionDiagram:
 
         # Return the result from the best estimate if not convergence
         import sys
-        print(f"Secant method did not converge Pn-target: {Pn_target}, Pn-best: {Pn2:.2f}, alpha: {alpha}", file=sys.stderr, flush=True)
         Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps = self.compute_Pn_Mn(best_c, alpha)
+        print(f"Secant method did not converge Pn-target: {Pn_target}, Pn2: {Pn2:.2f}, Pn-best: {best_c:.2f}, alpha: {alpha}", file=sys.stderr, flush=True)
         return Pn2, Mnx2, Mny2, eps_t, Pc, Pcr, Ps, best_c, iter_count
 
     def interpolate_PM(self, theta_target: float, results: Capacity, element: list = ["Pn", "Mnx", "Mny"]):
