@@ -807,7 +807,7 @@ class ConcreteInteractionDiagram:
             # Avoid division by zero.
             # If still true, usually the c1 and c2 are beyond to c_max
             # that cause Pn1 ~= Pn2.
-            if abs(Pn2 - Pn1) < 1e-6:
+            if abs(Pn2 - Pn1) == 0:
                 c1 = 0.9 * self.h / self.beta1
                 c2 = self.h / self.beta1
                 Pn1 = self.compute_Pn(c1, alpha)
