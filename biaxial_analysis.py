@@ -441,6 +441,8 @@ class ConcreteInteractionDiagram:
 
     def compute_Pn_minus_Pn_target(self, c: float = 10, alpha: float = 0, Pn_target: float = 0, tol: float = 1e-2):
         Pn = self.compute_Pn(c, alpha)
+        if abs(Pn - Pn_target) < tol:
+            return 0
         return Pn - Pn_target
 
     @cache
