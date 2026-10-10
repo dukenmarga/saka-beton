@@ -46,6 +46,7 @@ class ConcreteInteractionDiagram:
                 "Muy": [0],
             },
             Pns_target: list = None,
+            max_stress_modifier: float = 0.85,
             method: Literal["brent", "bisect", "secant"] = "secant",
             tol: float = 1e-2,
         ):
@@ -80,6 +81,9 @@ class ConcreteInteractionDiagram:
 
         # Define tolerance
         self.tol = tol
+
+        # Maximum concrete stress modifier
+        self.msm = max_stress_modifier
 
     def check_clear_concrete_cover(self):
         # Group concrete boundary into edges
@@ -510,7 +514,7 @@ class ConcreteInteractionDiagram:
         # Concrete force at rebar position (to correct hole made by rebar)
         # Fci = 0.85*fci * As
         # fci * As (MPa * mm2 / 1000 -> KN)
-        rebar_As_fci = 0.85*rebar[['fci']].to_numpy(copy=True) * rebar[['As']].to_numpy(copy=True) / 1000
+        rebar_As_fci = self.msm*rebar[['fci']].to_numpy(copy=True) * rebar[['As']].to_numpy(copy=True) / 1000
         rebar['As_fci'] = rebar_As_fci
 
         #############
@@ -613,7 +617,7 @@ class ConcreteInteractionDiagram:
         # Concrete force at rebar position (to correct hole made by rebar)
         # Fci = 0.85*fci * As
         # fci * As (MPa * mm2 / 1000 -> KN)
-        rebar_As_fci = 0.85*rebar[['fci']].to_numpy(copy=True) * rebar[['As']].to_numpy(copy=True) / 1000
+        rebar_As_fci = self.msm*rebar[['fci']].to_numpy(copy=True) * rebar[['As']].to_numpy(copy=True) / 1000
         rebar['As_fci'] = rebar_As_fci
 
         #############
@@ -1150,7 +1154,7 @@ class ConcreteInteractionDiagram:
             concrete_area -= opening_area
         rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].to_numpy(copy=True)))
 
-        return (0.85*fc_*(concrete_area-rebar_area) + fy*rebar_area) / 1e3
+        return (self.msm*fc_*(concrete_area-rebar_area) + fy*rebar_area) / 1e3
 
     def Pcn(self, concrete_compressed_boundary_xy: np.ndarray):
         """
@@ -1166,7 +1170,7 @@ class ConcreteInteractionDiagram:
         Ac = geometry.calculate_concrete_area(concrete_compressed_boundary_xy)
 
         # Calculate Pn contributed by concrete compression
-        Pcn = 0.85*self.material.fc_ * Ac / 1e3
+        Pcn = self.msm*self.material.fc_ * Ac / 1e3
 
         return Pcn
 
