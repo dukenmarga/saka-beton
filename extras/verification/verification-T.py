@@ -34,7 +34,7 @@ def example5():
         }),
         fc_ = 29.3,
         epsilon_0 = 0.002,
-        epsilon_u = 0.003,
+        epsilon_u = 0.0038,
         fy = 532.28,
         Es = 200000,
         transverse="ties",
@@ -43,6 +43,7 @@ def example5():
             "Mux": [51.45],
             "Muy": [10],
         },
+        max_stress_modifier=1,
         method = "secant",
         tol = 1e-2
     )
