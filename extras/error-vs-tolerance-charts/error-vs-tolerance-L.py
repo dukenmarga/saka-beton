@@ -6,12 +6,12 @@ import matplotlib.ticker as mtick
 from pathlib import Path
 
 x_brentq = [0.00001,0.0001,0.001,0.01,0.1,1]
-y_average_brentq = [0.000000008618732327292,0.0000000637209367242553,0.000000881455431390134,0.0000160408051608856,0.000189779954948825,0.0020986584340042]
+y_average_brentq = [0.00000000909219598176471,0.0000000622084178842779,0.000000655026771379396,0.00000966971890658108,0.000149557860021294,0.00148590577291983]
 x_mod_secant = [0.00001,0.0001,0.001,0.01,0.1,1]
-y_average_mod_secant = [0.00000000282806588522127,0.0000000430687213592053,0.000000208226108101891,0.00000128597607835323,0.0000329581554488887,0.000758061976014223]
+y_average_mod_secant = [0.00000000194728782860987,0.0000000386015528925806,0.000000299295289787715,0.00000193678951370792,0.0000787409104755844,0.000416659678208043]
 
 
-x_smooth = np.linspace(min(x_mod_secant), max(x_mod_secant), 300)
+x_smooth = np.logspace(np.log10(min(x_mod_secant)), np.log10(max(x_mod_secant)), 300)
 pchip_mod_secant = PchipInterpolator(x_mod_secant, y_average_mod_secant)
 y_smooth_mod_secant = pchip_mod_secant(x_smooth)
 
@@ -22,6 +22,8 @@ fig, ax = plt.subplots()
 
 ax.plot(x_smooth, y_smooth_mod_secant, 'r', label='This study')
 ax.plot(x_smooth, y_smooth_brentq, 'b', label='Brent Method')
+ax.plot(x_mod_secant, y_average_mod_secant, 'ro', ms=4)
+ax.plot(x_brentq, y_average_brentq, 'bo', ms=4)
 
 min_y = min(chain(y_average_mod_secant, y_average_brentq))
 max_y = max(chain(y_average_mod_secant, y_average_brentq))
