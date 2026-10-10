@@ -17,7 +17,7 @@ def example5():
     return ConcreteInteractionDiagram(
         concrete_boundary = section.create_l_shape("L-shape-1", 152.4, 190.5, 76.2, 76.2),
         rebar = reinforcement.build_lshape_rebar(
-            "L-shape-1", 152.4, 190.5, 76.2, 76.2, 4, 5, 2, 2, 3, 4, 17.4625
+            "L-shape-1", 152.4, 190.5, 76.2, 76.2, 4, 5, 2, 2, 4, 3, 17.4625
         ),
         fc_ = 24.13166,
         epsilon_0 = 0.002,
@@ -30,6 +30,7 @@ def example5():
             "Mux": [10],
             "Muy": [10],
         },
+        max_stress_modifier=1,
         method = "secant",
         tol = 1e-2
     )
