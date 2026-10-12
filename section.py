@@ -105,7 +105,7 @@ class Reinforcement:
                 (c - cover, b - cover),
                 (cover, b - cover),
             ]
-            n_list = [n_a, n_d, n_e, n_f, n_c, n_b]
+            n_list = [n_a, n_d, n_f, n_e, n_c, n_b]
         elif shape_type == "L-shape-2":
             p = [
                 (cover, cover),
@@ -115,7 +115,7 @@ class Reinforcement:
                 (a - c + cover, d - cover),
                 (cover, d - cover),
             ]
-            n_list = [n_a, n_b, n_c, n_f, n_e, n_d]
+            n_list = [n_a, n_b, n_c, n_e, n_f, n_d]
         elif shape_type == "L-shape-3":
             p = [
                 (a - c + cover, cover),
@@ -125,7 +125,7 @@ class Reinforcement:
                 (cover, b - d + cover),
                 (a - c + cover, b - d + cover),
             ]
-            n_list = [n_c, n_b, n_a, n_d, n_e, n_f]
+            n_list = [n_c, n_b, n_a, n_d, n_f, n_e]
         elif shape_type == "L-shape-4":
             p = [
                 (cover, cover),
@@ -135,7 +135,7 @@ class Reinforcement:
                 (a - cover, b - cover),
                 (cover, b - cover),
             ]
-            n_list = [n_c, n_f, n_e, n_d, n_a, n_b]
+            n_list = [n_c, n_e, n_f, n_d, n_a, n_b]
         else:
             return None
 
