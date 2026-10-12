@@ -33,14 +33,14 @@ ax.set_ylim(min_y, max_y*1.1)
 ax.grid(linewidth=0.5)
 
 ax.set_title("Average Error and Tolerance (L-shape section)")
-ax.set_xlabel("Tolerance")
+ax.set_xlabel("Tolerance (kN)")
 ax.set_ylabel("Average error")
 
 ax.yaxis.set_major_formatter(mtick.PercentFormatter(xmax=1))
 
 ax.set_xscale('log')
 
-ax.legend(loc='upper right', ncols=2, bbox_to_anchor=(0.75, -0.16), framealpha=0.4)
+ax.legend(loc='upper right', ncols=2, bbox_to_anchor=(0.75, -0.12), framealpha=0.4)
 plt.tight_layout()
 
 script_dir = Path(__file__).resolve().parent
