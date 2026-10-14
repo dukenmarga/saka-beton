@@ -40,6 +40,7 @@ def analyse():
     reinf = Reinforcement(rebar_dia)
 
     section = Section()
+    openings = []
     if section_shape == "rectangle":
         width = float(request.args.get("width", "300"))
         height = float(request.args.get("height", "500"))
@@ -74,6 +75,48 @@ def analyse():
         rebar = reinf.build_lshape_rebar(
             section_shape, a, b, c, d, n_a, n_b, n_c, n_d, n_e, n_f, cover=cover
         )
+    elif section_shape.startswith("T-shape"):
+        a = float(request.args.get("t_dim_a", "600"))
+        b = float(request.args.get("t_dim_b", "600"))
+        c = float(request.args.get("t_dim_c", "200"))
+        d = float(request.args.get("t_dim_d", "200"))
+        concrete_boundary = section.create_t_shape(section_shape, a, b, c, d)
+        # Reinforcement
+        n_a = int(request.args.get("tn_a", "5"))
+        n_b = int(request.args.get("tn_b", "3"))
+        n_c = int(request.args.get("tn_c", "3"))
+        n_d = int(request.args.get("tn_d", "4"))
+        n_e = int(request.args.get("tn_e", "3"))
+        n_f = int(request.args.get("tn_f", "4"))
+        n_g = int(request.args.get("tn_g", "3"))
+        n_h = int(request.args.get("tn_h", "3"))
+        rebar = reinf.build_tshape_rebar(
+            section_shape, a, b, c, d,
+            n_a, n_b, n_c, n_d, n_e, n_f, n_g, n_h, cover=cover
+        )
+    elif section_shape == "hollow-circle":
+        outer_dia = float(request.args.get("outer_dia", "600"))
+        inner_dia = float(request.args.get("inner_dia", "400"))
+        concrete_boundary, openings = section.create_hollow_circle(outer_dia, inner_dia)
+        # Reinforcement
+        n_ring = int(request.args.get("n_ring", "12"))
+        rebar = reinf.build_circle_rebar(outer_dia, n_ring, cover=cover)
+    elif section_shape == "hollow-rectangle":
+        box_width = float(request.args.get("box_width", "800"))
+        box_height = float(request.args.get("box_height", "1000"))
+        box_thickness = float(request.args.get("box_thickness", "200"))
+        concrete_boundary, openings = section.create_hollow_rectangle(
+            box_width, box_height, box_thickness
+        )
+        # Reinforcement
+        n_bottom = int(request.args.get("box_n_bottom", "3"))
+        n_top = int(request.args.get("box_n_top", "3"))
+        n_left = int(request.args.get("box_n_left", "4"))
+        n_right = int(request.args.get("box_n_right", "4"))
+        rebar = reinf.build_hollow_rectangle_rebar(
+            box_width, box_height, box_thickness,
+            n_left, n_top, n_right, n_bottom, cover=cover
+        )
     else:
         raise ValueError(f"Unknown section shape: {section_shape}")
 
@@ -102,6 +145,7 @@ def analyse():
     solution = ConcreteInteractionDiagram(
         concrete_boundary=concrete_boundary,
         rebar=rebar,
+        openings=openings,
         fc_=fc,
         epsilon_0=0.002,
         epsilon_u=0.0038,

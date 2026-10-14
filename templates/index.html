@@ -89,6 +89,12 @@
                                     <option value="L-shape-2">L-shape 2</option>
                                     <option value="L-shape-3">L-shape 3</option>
                                     <option value="L-shape-4">L-shape 4</option>
+                                    <option value="T-shape-1">T-shape 1</option>
+                                    <option value="T-shape-2">T-shape 2</option>
+                                    <option value="T-shape-3">T-shape 3</option>
+                                    <option value="T-shape-4">T-shape 4</option>
+                                    <option value="hollow-circle">Hollow Circle</option>
+                                    <option value="hollow-rectangle">Hollow Rectangle</option>
                                 </select>
                             </div>
 
@@ -133,6 +139,57 @@
                                     <div class="input-row">
                                         <label for="dim_d">D (mm):</label>
                                         <input type="number" id="dim_d" name="dim_d" value="150">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="tshape-dims" class="dimension-group">
+                                <div class="input-grid">
+                                    <div class="input-row">
+                                        <label for="t_dim_a">A (mm):</label>
+                                        <input type="number" id="t_dim_a" name="t_dim_a" value="600">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="t_dim_b">B (mm):</label>
+                                        <input type="number" id="t_dim_b" name="t_dim_b" value="600">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="t_dim_c">C (mm):</label>
+                                        <input type="number" id="t_dim_c" name="t_dim_c" value="200">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="t_dim_d">D (mm):</label>
+                                        <input type="number" id="t_dim_d" name="t_dim_d" value="200">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="hollow-circle-dims" class="dimension-group">
+                                <div class="input-grid">
+                                    <div class="input-row">
+                                        <label for="outer_dia">Outer Diameter (mm):</label>
+                                        <input type="number" id="outer_dia" name="outer_dia" value="600">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="inner_dia">Inner Diameter (mm):</label>
+                                        <input type="number" id="inner_dia" name="inner_dia" value="400">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="hollow-rect-dims" class="dimension-group">
+                                <div class="input-grid">
+                                    <div class="input-row">
+                                        <label for="box_width">Width (mm):</label>
+                                        <input type="number" id="box_width" name="box_width" value="800">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="box_height">Height (mm):</label>
+                                        <input type="number" id="box_height" name="box_height" value="1000">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="box_thickness">Wall Thickness (mm):</label>
+                                        <input type="number" id="box_thickness" name="box_thickness" value="200">
                                     </div>
                                 </div>
                             </div>
@@ -236,6 +293,72 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <div id="tshape-rebar" class="rebar-group">
+                                <div class="input-grid">
+                                    <div class="input-row">
+                                        <label for="tn_a">Side A:</label>
+                                        <input type="number" id="tn_a" name="tn_a" value="5" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="tn_b">Side B:</label>
+                                        <input type="number" id="tn_b" name="tn_b" value="3" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="tn_c">Side C:</label>
+                                        <input type="number" id="tn_c" name="tn_c" value="3" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="tn_d">Side D:</label>
+                                        <input type="number" id="tn_d" name="tn_d" value="4" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="tn_e">Side E:</label>
+                                        <input type="number" id="tn_e" name="tn_e" value="3" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="tn_f">Side F:</label>
+                                        <input type="number" id="tn_f" name="tn_f" value="4" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="tn_g">Side G:</label>
+                                        <input type="number" id="tn_g" name="tn_g" value="3" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="tn_h">Side H:</label>
+                                        <input type="number" id="tn_h" name="tn_h" value="3" min="2">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="hollow-circle-rebar" class="rebar-group">
+                                <div class="input-row">
+                                    <label for="n_ring">Total Rebars:</label>
+                                    <input type="number" id="n_ring" name="n_ring" value="12" min="4">
+                                </div>
+                            </div>
+
+                            <div id="hollow-rect-rebar" class="rebar-group">
+                                <div class="input-grid">
+                                    <div class="input-row">
+                                        <label for="box_n_bottom">Bottom:</label>
+                                        <input type="number" id="box_n_bottom" name="box_n_bottom" value="3" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="box_n_top">Top:</label>
+                                        <input type="number" id="box_n_top" name="box_n_top" value="3" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="box_n_left">Left:</label>
+                                        <input type="number" id="box_n_left" name="box_n_left" value="4" min="2">
+                                    </div>
+                                    <div class="input-row">
+                                        <label for="box_n_right">Right:</label>
+                                        <input type="number" id="box_n_right" name="box_n_right" value="4" min="2">
+                                    </div>
+                                </div>
+                                <small style="color: #666; font-style: italic;">The same counts are applied to the inner layer of bars.</small>
+                            </div>
                         </fieldset>
 
                         <fieldset>
@@ -326,7 +449,13 @@
                 'L-shape-1': 'L1.png',
                 'L-shape-2': 'L2.png',
                 'L-shape-3': 'L3.png',
-                'L-shape-4': 'L4.png'
+                'L-shape-4': 'L4.png',
+                'T-shape-1': 'T1.png',
+                'T-shape-2': 'T2.png',
+                'T-shape-3': 'T3.png',
+                'T-shape-4': 'T4.png',
+                'hollow-circle': 'hollow-circle.png',
+                'hollow-rectangle': 'hollow-rectangle.png'
             };
             
             if (imageMap[shape]) {
@@ -346,6 +475,15 @@
             } else if (shape.startsWith('L-shape')) {
                 document.getElementById('lshape-dims').classList.add('active');
                 document.getElementById('lshape-rebar').classList.add('active');
+            } else if (shape.startsWith('T-shape')) {
+                document.getElementById('tshape-dims').classList.add('active');
+                document.getElementById('tshape-rebar').classList.add('active');
+            } else if (shape === 'hollow-circle') {
+                document.getElementById('hollow-circle-dims').classList.add('active');
+                document.getElementById('hollow-circle-rebar').classList.add('active');
+            } else if (shape === 'hollow-rectangle') {
+                document.getElementById('hollow-rect-dims').classList.add('active');
+                document.getElementById('hollow-rect-rebar').classList.add('active');
             }
         }
         
