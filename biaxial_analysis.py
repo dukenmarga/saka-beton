@@ -4,6 +4,7 @@ import datetime as dt
 import multiprocessing
 import shapely
 import math
+import sys
 import pygmsh
 import copy
 from scipy.optimize import brentq, bisect
@@ -19,7 +20,8 @@ from material import Material
 from capacity import Capacity
 
 import faulthandler
-faulthandler.enable()
+if sys.stderr is not None:
+    faulthandler.enable()
 
 class ConcreteInteractionDiagram:
     """

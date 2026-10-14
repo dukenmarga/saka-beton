@@ -9,6 +9,19 @@ When frozen, this file handles two modes:
 import os
 import sys
 
+# Windowed builds (console=False) leave these as None, and multiprocessing workers
+# write their tracebacks to sys.stderr, which would crash them.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
+import multiprocessing
+
+# Must run before app/biaxial_analysis are imported: on Windows every Pool worker
+# re-launches this exe, and freeze_support() turns this process into that worker.
+multiprocessing.freeze_support()
+
 if getattr(sys, 'frozen', False):
     # Detect executor mode: app.py spawns [sys.executable, _MEIPASS/executor.py, pickle_path]
     if len(sys.argv) >= 3 and os.path.basename(sys.argv[1]) == 'executor.py':
