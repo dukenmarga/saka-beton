@@ -1333,6 +1333,22 @@ class ConcreteInteractionDiagram:
         self._rebar['x_norm'] = self._rebar['x'] - x
         self._rebar['y_norm'] = self._rebar['y'] - y
 
+def worker_count():
+    """
+    How many pool workers the machine can afford. Each worker is a separate
+    interpreter holding numpy/scipy/shapely plus the section it unpickles
+    (~100 MB measured), so RAM runs out before CPUs do.
+    """
+    import psutil
+    mem = psutil.virtual_memory()
+    # Headroom for the OS, the Flask process and the plotting step.
+    reserve = min(mem.total * 0.10, 1024 * 1024 ** 2)
+    mem_by_a_worker = 100 * 1024 ** 2 # 100 MB
+    by_ram = int((mem.available - reserve) // mem_by_a_worker)
+    wc = max(1, min(multiprocessing.cpu_count(), by_ram))
+    print(f"Worker count:\t{wc}")
+    return wc
+
 def run(solution: ConcreteInteractionDiagram, output: bool = True, output_file: str = "output.tsv"):
     now = dt.datetime.now()
 
