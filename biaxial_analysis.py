@@ -15,7 +15,6 @@ from functools import cached_property, cache
 
 from sni_2847 import SNI_2847_2019
 import geometry
-from postprocessing import Plot
 from material import Material
 from capacity import Capacity
 
@@ -1237,19 +1236,19 @@ class ConcreteInteractionDiagram:
         # Create a list to store the results
         results = []
 
-        for _, Pn_target in enumerate(Pns_target):
-            Pn0 = []
-            Mnx0 = []
-            Mny0 = []
-            theta0 = []
-            phi0 = []
-            eps_t0 = []
-            phiPns = []
-            phiMnxs = []
-            phiMnys = []
-            iterations = []
+        with multiprocessing.Pool(processes=worker_count(), maxtasksperchild=30) as pool:
+            for _, Pn_target in enumerate(Pns_target):
+                Pn0 = []
+                Mnx0 = []
+                Mny0 = []
+                theta0 = []
+                phi0 = []
+                eps_t0 = []
+                phiPns = []
+                phiMnxs = []
+                phiMnys = []
+                iterations = []
 
-            with multiprocessing.Pool(processes=16) as pool:
                 # Map the function to the inputs and get results in order
                 for Pn, Mnx, Mny, eps_t, alpha, theta, phi, Pc, Pcr, Ps, c, iteration in pool.starmap(self.find_Mx_My_at_P, [(Pn_target, alpha) for alpha in alphas]):
                     phiPn = sni.compute_phiPn(phi, Pn, phiPn_max)
@@ -1270,18 +1269,18 @@ class ConcreteInteractionDiagram:
                     result = [Pn, Mnx, Mny, alpha, theta, eps_t, phi, phiPn, phiMnx, phiMny, Pc, Pcr, Ps, c, iteration]
                     results.append(result)
 
-            nc.capacity.append({
-                "Pn": Pn0,
-                "Mnx": Mnx0,
-                "Mny": Mny0,
-                "theta": theta0,
-            })
-            rc.capacity.append({
-                "Pn": phiPns,
-                "Mnx": phiMnxs,
-                "Mny": phiMnys,
-                "theta": theta0,
-            })
+                nc.capacity.append({
+                    "Pn": Pn0,
+                    "Mnx": Mnx0,
+                    "Mny": Mny0,
+                    "theta": theta0,
+                })
+                rc.capacity.append({
+                    "Pn": phiPns,
+                    "Mnx": phiMnxs,
+                    "Mny": phiMnys,
+                    "theta": theta0,
+                })
 
         # Convert list to dataframe
         results = pd.DataFrame(results, columns=["Axial (Pn)", "Moment X (Mnx)", "Moment Y (Mny)", "alpha", "theta", "eps_t", "phi", "phiPn", "phiMnx", "phiMny", "Pc", "Pcr", "Ps", "N.A Depth (c)", "Iteration"])
@@ -1368,7 +1367,7 @@ def run(solution: ConcreteInteractionDiagram, output: bool = True, output_file: 
     Mns2, Pns2, theta2, loads = solution.interpolate_PM_at_loads(solution.loads, nominalCapacity)
     phiMns2, phiPns2, phitheta2, philoads = solution.interpolate_PM_at_loads(loads, reducedCapacity)
 
-    # Plot
+    from postprocessing import Plot
     plot = Plot()
     plot.draw_section(solution)
     plot.plot3d(reducedCapacity)
