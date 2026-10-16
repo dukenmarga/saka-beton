@@ -45,6 +45,7 @@ def analyse():
         width = float(request.args.get("width", "300"))
         height = float(request.args.get("height", "500"))
         concrete_boundary = section.create_rectangle(width, height)
+        section_info = {"shape": section_shape, "width": width, "height": height}
         # Reinforcement
         n_bottom = int(request.args.get("n_bottom", "3"))
         n_top = int(request.args.get("n_top", "3"))
@@ -56,6 +57,7 @@ def analyse():
     elif section_shape == "circle":
         diameter = float(request.args.get("diameter", "400"))
         concrete_boundary = section.create_circle(diameter)
+        section_info = {"shape": section_shape, "diameter": diameter}
         # Reinforcement
         n_total = int(request.args.get("n_total", "8"))
         rebar = reinf.build_circle_rebar(diameter, n_total, cover=cover)
@@ -65,6 +67,7 @@ def analyse():
         c = float(request.args.get("dim_c", "150"))
         d = float(request.args.get("dim_d", "150"))
         concrete_boundary = section.create_l_shape(section_shape, a, b, c, d)
+        section_info = {"shape": section_shape, "a": a, "b": b, "c": c, "d": d}
         # Reinforcement
         n_a = int(request.args.get("n_a", "3"))
         n_b = int(request.args.get("n_b", "3"))
@@ -81,6 +84,7 @@ def analyse():
         c = float(request.args.get("t_dim_c", "200"))
         d = float(request.args.get("t_dim_d", "200"))
         concrete_boundary = section.create_t_shape(section_shape, a, b, c, d)
+        section_info = {"shape": section_shape, "a": a, "b": b, "c": c, "d": d}
         # Reinforcement
         n_a = int(request.args.get("tn_a", "5"))
         n_b = int(request.args.get("tn_b", "3"))
@@ -98,6 +102,7 @@ def analyse():
         outer_dia = float(request.args.get("outer_dia", "600"))
         inner_dia = float(request.args.get("inner_dia", "400"))
         concrete_boundary, openings = section.create_hollow_circle(outer_dia, inner_dia)
+        section_info = {"shape": section_shape, "outer_diameter": outer_dia, "inner_diameter": inner_dia}
         # Reinforcement
         n_ring = int(request.args.get("n_ring", "12"))
         rebar = reinf.build_circle_rebar(outer_dia, n_ring, cover=cover)
@@ -108,6 +113,7 @@ def analyse():
         concrete_boundary, openings = section.create_hollow_rectangle(
             box_width, box_height, box_thickness
         )
+        section_info = {"shape": section_shape, "width": box_width, "height": box_height, "thickness": box_thickness}
         # Reinforcement
         n_bottom = int(request.args.get("box_n_bottom", "3"))
         n_top = int(request.args.get("box_n_top", "3"))
@@ -119,6 +125,8 @@ def analyse():
         )
     else:
         raise ValueError(f"Unknown section shape: {section_shape}")
+
+    section_info["cover"] = cover
 
     # Parse loads from textarea
     loads_text = request.args.get("loads", "")
@@ -146,6 +154,7 @@ def analyse():
         concrete_boundary=concrete_boundary,
         rebar=rebar,
         openings=openings,
+        section=section_info,
         fc_=fc,
         epsilon_0=0.002,
         epsilon_u=0.0038,

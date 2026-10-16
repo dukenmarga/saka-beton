@@ -17,6 +17,7 @@ from sni_2847 import SNI_2847_2019
 import geometry
 from material import Material
 from capacity import Capacity
+from reporting import Report
 
 import faulthandler
 if sys.stderr is not None:
@@ -31,6 +32,7 @@ class ConcreteInteractionDiagram:
             concrete_boundary: pd.DataFrame,
             rebar: pd.DataFrame,
             openings: list[pd.DataFrame] = [],
+            section: dict = None, # shape and dimensions chosen in the form, for reporting
             fc_ = 30, # MPa
             fy = 400, # MPa
             fsu = None, # MPa
@@ -85,6 +87,10 @@ class ConcreteInteractionDiagram:
 
         # Maximum concrete stress modifier
         self.msm = max_stress_modifier
+
+        # Reporting
+        self.section = section or {}
+        self.report = Report(self)
 
     def check_clear_concrete_cover(self):
         # Group concrete boundary into edges
@@ -1354,6 +1360,11 @@ class ConcreteInteractionDiagram:
         self._rebar['x_norm'] = self._rebar['x'] - x
         self._rebar['y_norm'] = self._rebar['y'] - y
 
+    def generate_report(self):
+        self.report.prepare_report()
+        self.report.convert_report()
+        print("PDF created successfully!")
+
 def worker_count():
     """
     How many pool workers the machine can afford. Each worker is a separate
@@ -1412,6 +1423,8 @@ def run(solution: ConcreteInteractionDiagram, output: bool = True, output_file: 
     # Save results
     if output:
         results.to_csv(output_file, sep='\t', index=False)
+        solution.report.images = plot.save_for_report()
+        solution.generate_report()
 
     plot.show()
     return results

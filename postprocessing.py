@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import math
+import os
 import matplotlib.colors as mcolors
 from matplotlib.patches import Circle
 from matplotlib.gridspec import GridSpec
@@ -61,6 +62,10 @@ class Plot:
         self.ax_pm_loads.set_ylabel('Pn (KN)', labelpad=-5)
         self.ax_pm_loads.axhline(y=0, color='k', linestyle='-')
 
+        # Drawings remembered for the report figures
+        self._section_solution = None
+        self._pm_loads_calls = []
+
         # Set aspect
         self.ax_3d.set_aspect('equal', adjustable='box', anchor='C')
         self.ax_mm.set_aspect('equal', adjustable='box', anchor='C')
@@ -70,11 +75,13 @@ class Plot:
         # Set title at the top
         self.fig.suptitle('Concrete Column Interaction Diagrams', fontsize=16, y=0.96)
 
-    def draw_section(self, solution):
+    def draw_section(self, solution, ax=None):
         """
         Draw the concrete section
         """
-        ax = self.ax_section
+        if ax is None:
+            ax = self.ax_section
+            self._section_solution = solution
         ax.plot(np.append(solution._original_concrete_boundary['x_norm'], solution._original_concrete_boundary['x_norm'][0]),
                     np.append(solution._original_concrete_boundary['y_norm'], solution._original_concrete_boundary['y_norm'][0]), 'k-')
         for i in range(len(solution.openings)):
@@ -175,8 +182,10 @@ class Plot:
         ax.set_xlim(x_min*1.1, x_max*1.1)  # 10% margin on both sides
         ax.set_ylim(y_min*1.05, y_max*1.05)
 
-    def plot_PM_from_loads(self, Mns: list, Pns: list, loads: dict, thetas: float, reduced=False):
-        ax = self.ax_pm_loads
+    def plot_PM_from_loads(self, Mns: list, Pns: list, loads: dict, thetas: float, reduced=False, ax=None):
+        if ax is None:
+            ax = self.ax_pm_loads
+            self._pm_loads_calls.append((Mns, Pns, loads, thetas, reduced))
         legends = []
         x_min = 0   # tracks the most negative Mn
         x_max = 0   # tracks the most positive Mn
@@ -299,6 +308,41 @@ class Plot:
         ax.set_zlabel('Pn (KN)')
         ax.set_title('3D Interaction Surface')
         ax.set_aspect('equalxy')
+
+    def save_for_report(self, directory: str = "tmp"):
+        """
+        Draw the section and the PM diagram on figures of their own and save them
+        as SVG for the PDF report. This replays the drawings already made for the
+        screen figure, so nothing is recalculated.
+        """
+        os.makedirs(directory, exist_ok=True)
+        images = {}
+
+        fig, ax = plt.subplots(figsize=(4, 4))
+        self.draw_section(self._section_solution, ax=ax)
+        ax.set_xlabel('x (mm)')
+        ax.set_ylabel('y (mm)')
+        images["section"] = self._save_svg(fig, directory, "section")
+
+        # No title on the figure itself: the report puts a heading above it.
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.set_xlabel('Mn (KN.m)')
+        ax.set_ylabel('Pn (KN)')
+        ax.axhline(y=0, color='k', linestyle='-')
+        for Mns, Pns, loads, thetas, reduced in self._pm_loads_calls:
+            self.plot_PM_from_loads(Mns, Pns, loads, thetas, reduced=reduced, ax=ax)
+        images["diagram"] = self._save_svg(fig, directory, "diagram")
+
+        return images
+
+    def _save_svg(self, fig, directory: str, name: str):
+        path = os.path.join(directory, f"report_{name}.svg")
+        # Matplotlib writes an RDF <metadata> block that fpdf2 cannot read and
+        # warns about; passing empty metadata leaves it out.
+        fig.savefig(path, format="svg", bbox_inches="tight",
+                    metadata={"Creator": None, "Date": None, "Format": None, "Type": None})
+        plt.close(fig)
+        return path
 
     def show(self):
         self.ax_section.grid(linewidth=0.5)

@@ -6,3 +6,5 @@ pygmsh==7.*
 flask==3.*
 scipy==1.*
 psutil==7.*
+fpdf2
+markdown-it-py
