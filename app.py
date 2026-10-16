@@ -8,6 +8,7 @@ import pickle
 import uuid
 import sys
 from section import Section, Reinforcement
+from version import __version__
 
 app = Flask(__name__)
 
@@ -18,7 +19,7 @@ def index():
     if os.path.exists("LICENSE"):
         with open("LICENSE", "r") as f:
             license_content = f.read()
-    return render_template("index.html", license_content=license_content)
+    return render_template("index.html", license_content=license_content, version=__version__)
 
 
 @app.route("/images/<path:filename>")
