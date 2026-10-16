@@ -1143,16 +1143,38 @@ class ConcreteInteractionDiagram:
         return theta
 
     @cached_property
+    def outer_concrete_area(self):
+        """
+        Area enclosed by the concrete boundary, openings still included
+        """
+        return geometry.calculate_concrete_area(self._original_concrete_boundary[['x', 'y']].to_numpy(copy=True))
+
+    @cached_property
+    def opening_area(self):
+        """
+        Total area of the openings
+        """
+        return sum(
+            geometry.calculate_concrete_area(opening[['x', 'y']].to_numpy(copy=True))
+            for opening in self.openings
+        )
+
+    @cached_property
+    def gross_concrete_area(self):
+        """
+        Gross concrete area, Ag. Following ACI 318 / SNI 2847, the area of the
+        openings is not part of Ag for a hollow section.
+        """
+        return self.outer_concrete_area - self.opening_area
+
+    @cached_property
     def Po(self):
         """
         Nominal compressive strength, without reduction to consider accidental eccentricity
         """
         fc_ = self.material.fc_
         fy = self.material.fy
-        concrete_area = geometry.calculate_concrete_area(self._original_concrete_boundary[['x', 'y']].to_numpy(copy=True))
-        for opening in self.openings:
-            opening_area = geometry.calculate_concrete_area(opening[['x', 'y']].to_numpy(copy=True))
-            concrete_area -= opening_area
+        concrete_area = self.gross_concrete_area
         rebar_area = np.sum(geometry.calculate_rebar_area(self.rebar['diameter'].to_numpy(copy=True)))
 
         return (self.msm*fc_*(concrete_area-rebar_area) + fy*rebar_area) / 1e3
