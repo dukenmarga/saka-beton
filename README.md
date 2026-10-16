@@ -10,7 +10,7 @@ Current version is 1.0.0 and is available in platform Microsoft Windows and Linu
 
 [Download from here](https://github.com/dukenmarga/saka-beton/releases/tag/v1.0.0). 
 
-## Capability
+## Capabilities
 
 * Comply with SNI 2847:2019
 * Ability to analyze arbitrary shape and reinforcement configurations
