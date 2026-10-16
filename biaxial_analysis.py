@@ -4,6 +4,7 @@ import datetime as dt
 import multiprocessing
 import shapely
 import math
+import os
 import sys
 import pygmsh
 import copy
@@ -17,7 +18,7 @@ from sni_2847 import SNI_2847_2019
 import geometry
 from material import Material
 from capacity import Capacity
-from reporting import Report
+from reporting import Report, SUMMARY_PREFIX
 
 import faulthandler
 if sys.stderr is not None:
@@ -1360,9 +1361,10 @@ class ConcreteInteractionDiagram:
         self._rebar['x_norm'] = self._rebar['x'] - x
         self._rebar['y_norm'] = self._rebar['y'] - y
 
-    def generate_report(self):
+    def generate_report(self, report_file: str = "analysis_report.pdf"):
         self.report.prepare_report()
-        self.report.convert_report()
+        self.report.convert_report(report_file)
+        print(f"{SUMMARY_PREFIX}{self.report.loads_verdict()}")
         print("PDF created successfully!")
 
 def worker_count():
@@ -1381,7 +1383,8 @@ def worker_count():
     print(f"Worker count:\t{wc}")
     return wc
 
-def run(solution: ConcreteInteractionDiagram, output: bool = True, output_file: str = "output.tsv"):
+def run(solution: ConcreteInteractionDiagram, output: bool = True, output_file: str = "output.tsv",
+        report_file: str = "analysis_report.pdf"):
     now = dt.datetime.now()
 
     solution.preanalysis()
@@ -1423,8 +1426,11 @@ def run(solution: ConcreteInteractionDiagram, output: bool = True, output_file: 
     # Save results
     if output:
         results.to_csv(output_file, sep='\t', index=False)
-        solution.report.images = plot.save_for_report()
-        solution.generate_report()
+        # Figures are intermediates: keep them in tmp/, named after this run so
+        # two analyses running at once cannot pick up each other's pictures.
+        report_name = os.path.splitext(os.path.basename(report_file))[0]
+        solution.report.images = plot.save_for_report(prefix=report_name)
+        solution.generate_report(report_file)
 
     plot.show()
     return results

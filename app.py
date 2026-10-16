@@ -8,9 +8,24 @@ import pickle
 import uuid
 import sys
 from section import Section, Reinforcement
+from reporting import SUMMARY_PREFIX
 from version import __version__
 
 app = Flask(__name__)
+
+# Each analysis leaves its report here under the id of that run.
+tmp_dir = "tmp"
+
+
+def clear_old_reports():
+    """Reports and their figures belong to a single run: drop old ones at startup."""
+    if os.path.isdir(tmp_dir):
+        for name in os.listdir(tmp_dir):
+            if name.endswith((".pdf", ".svg")):
+                os.remove(os.path.join(tmp_dir, name))
+
+
+clear_old_reports()
 
 
 @app.route("/")
@@ -20,6 +35,16 @@ def index():
         with open("LICENSE", "r") as f:
             license_content = f.read()
     return render_template("index.html", license_content=license_content, version=__version__)
+
+
+@app.route("/report/<run_id>")
+def report(run_id):
+    return send_from_directory(
+        tmp_dir,
+        f"{run_id}.pdf",
+        as_attachment=True,
+        download_name="saka-beton-report.pdf",
+    )
 
 
 @app.route("/images/<path:filename>")
@@ -173,9 +198,10 @@ def analyse():
     )
 
     # Dump solution to file
-    tmp_dir = "tmp"
     os.makedirs(tmp_dir, exist_ok=True)
-    random_name = f"{tmp_dir}/{str(uuid.uuid4())}"
+    run_id = str(uuid.uuid4())
+    random_name = f"{tmp_dir}/{run_id}"
+    report_file = os.path.join(tmp_dir, f"{run_id}.pdf")
     with open(random_name, "wb") as f:
         pickle.dump(solution, f)
 
@@ -183,14 +209,19 @@ def analyse():
         # Run subprocess
         script_path = os.path.join(os.path.dirname(__file__), "executor.py")
         result = subprocess.run(
-            [sys.executable, script_path, random_name],
+            [sys.executable, script_path, random_name, report_file],
             capture_output=True,
             text=True,
             timeout=1000,
         )
 
         if result.returncode == 0:
-            return ""
+            summary = next(
+                (line[len(SUMMARY_PREFIX):] for line in result.stdout.splitlines()
+                 if line.startswith(SUMMARY_PREFIX)),
+                "",
+            )
+            return render_template("result.html", summary=summary, run_id=run_id)
         else:
             return f"<div style='color:red; border:1px solid red; padding:15px; border-radius:8px; text-align:center;'><h2>Error:</h2><pre style='text-align:left;'>{result.stderr}</pre></div>"
     except Exception as e:

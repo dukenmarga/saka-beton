@@ -29,7 +29,10 @@ if getattr(sys, 'frozen', False):
         from biaxial_analysis import run
         with open(sys.argv[2], 'rb') as f:
             obj = pickle.load(f)
-        run(obj)
+        if len(sys.argv) > 3:
+            run(obj, report_file=sys.argv[3])
+        else:
+            run(obj)
         sys.exit(0)
 
     # Server mode: chdir so app.py's relative paths (LICENSE, images/, tmp/) resolve correctly

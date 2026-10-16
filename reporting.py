@@ -13,6 +13,10 @@ from markdown_it import MarkdownIt
 
 import geometry
 
+# Prefix of the one line summary printed by generate_report(), so that app.py
+# can pick it out of the executor's output.
+SUMMARY_PREFIX = "[summary] "
+
 
 
 @dataclass
@@ -49,7 +53,7 @@ class Report:
 
 {self._loads_table()}
 
-{self._loads_verdict()}
+{self.loads_verdict()}
 
 {self._figure("diagram", "PM Interaction Diagram and Ultimate Loads", 470)}
 """
@@ -185,15 +189,18 @@ class Report:
         )
         return f'<table border="1" width="100%">\n{head}\n{rows}\n</table>'
 
-    def _loads_verdict(self) -> str:
+    def loads_verdict(self) -> str:
         """One sentence on whether the section carries every load combination."""
         safe = self.parent.loads["safe"]
-        unsafe = len(safe) - sum(safe)
+        total = len(safe)
+        unsafe = total - sum(safe)
+        if total == 1:
+            if unsafe:
+                return "The load combination exceeds the design capacity."
+            return "The load combination is within the design capacity."
         if unsafe == 0:
-            return f"All {len(safe)} load combinations are within the design capacity."
-        return (
-            f"{unsafe} of {len(safe)} load combinations exceed the design capacity."
-        )
+            return f"All {total} load combinations are within the design capacity."
+        return f"{unsafe} of {total} load combinations exceed the design capacity."
 
     def _use_unicode_font(self, pdf: FPDF) -> None:
         """
@@ -208,7 +215,7 @@ class Report:
         pdf.add_font("DejaVu", "B", os.path.join(ttf, "DejaVuSans-Bold.ttf"))
         pdf.set_font("DejaVu", size=11)
 
-    def convert_report(self):
+    def convert_report(self, path: str = "analysis_report.pdf"):
         md = MarkdownIt()
         html_content = md.render(self.markdown_text)
 
@@ -231,4 +238,4 @@ class Report:
         )
 
         # 4. Output menjadi file PDF
-        pdf.output("analysis_report.pdf")
+        pdf.output(path)

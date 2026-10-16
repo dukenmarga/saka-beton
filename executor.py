@@ -13,5 +13,8 @@ if __name__ == "__main__":
     else:
         raise Exception("No file provided")
 
-    # Run
-    run(obj)
+    # Run. The caller may say where the PDF report should be written.
+    if len(sys.argv) > 2:
+        run(obj, report_file=sys.argv[2])
+    else:
+        run(obj)

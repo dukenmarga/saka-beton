@@ -309,7 +309,7 @@ class Plot:
         ax.set_title('3D Interaction Surface')
         ax.set_aspect('equalxy')
 
-    def save_for_report(self, directory: str = "tmp"):
+    def save_for_report(self, directory: str = "tmp", prefix: str = "report"):
         """
         Draw the section and the PM diagram on figures of their own and save them
         as SVG for the PDF report. This replays the drawings already made for the
@@ -322,7 +322,7 @@ class Plot:
         self.draw_section(self._section_solution, ax=ax)
         ax.set_xlabel('x (mm)')
         ax.set_ylabel('y (mm)')
-        images["section"] = self._save_svg(fig, directory, "section")
+        images["section"] = self._save_svg(fig, directory, f"{prefix}_section")
 
         # No title on the figure itself: the report puts a heading above it.
         fig, ax = plt.subplots(figsize=(7, 5))
@@ -331,12 +331,12 @@ class Plot:
         ax.axhline(y=0, color='k', linestyle='-')
         for Mns, Pns, loads, thetas, reduced in self._pm_loads_calls:
             self.plot_PM_from_loads(Mns, Pns, loads, thetas, reduced=reduced, ax=ax)
-        images["diagram"] = self._save_svg(fig, directory, "diagram")
+        images["diagram"] = self._save_svg(fig, directory, f"{prefix}_diagram")
 
         return images
 
     def _save_svg(self, fig, directory: str, name: str):
-        path = os.path.join(directory, f"report_{name}.svg")
+        path = os.path.join(directory, f"{name}.svg")
         # Matplotlib writes an RDF <metadata> block that fpdf2 cannot read and
         # warns about; passing empty metadata leaves it out.
         fig.savefig(path, format="svg", bbox_inches="tight",
